@@ -1,0 +1,64 @@
+# ---- Entornos virtuales ----
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ---- Archivos de configuración local ----
+*.env
+*.env.*
+.envrc
+.secret
+secrets.json
+
+# ---- Archivos de compilación / cache ----
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ---- Logs ----
+*.log
+logs/
+*.out
+
+# ---- Archivos de base de datos temporal ----
+db.sqlite3
+*.db
+
+# ---- Archivos de dependencias ----
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ---- Archivos del IDE ----
+.vscode/
+.idea/
+*.iml
+
+# ---- Archivos del sistema ----
+.DS_Store
+Thumbs.db
+
+# ---- Archivos de test / cobertura ----
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+
+# ---- Documentación generada ----
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+
+# ---- Configuración de contenedores ----
+.docker/
+docker-compose.override.yml
+
+# ---- Otros ----
+*.bak
+*.swp
