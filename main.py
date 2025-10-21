@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from database import engine, SessionLocal
 import models
 import crud
-from routers import students, auth, transactions # <-- 1. Importa el router de transacciones
+# LA LÍNEA CLAVE A CORREGIR:
+from routers import students, auth, transactions, analytics, budgets
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,10 +28,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 2. Incluye todos los routers
+# Incluimos todos los routers
 app.include_router(students.router)
 app.include_router(auth.router)
 app.include_router(transactions.router)
+app.include_router(analytics.router) 
+app.include_router(budgets.router)
 
 @app.get("/", tags=["Root"])
 def read_root():

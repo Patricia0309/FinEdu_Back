@@ -1,75 +1,114 @@
-# backend/crud.py
-
 from sqlalchemy.orm import Session
-import models, schemas
-from security import get_password_hash 
+from typing import List
+import models
+import schemas
+from security import get_password_hash
+from sqlalchemy import func 
+from datetime import datetime, timezone
+
+def get_student_by_email(db: Session, email: str):
+    return db.query(models.Student).filter(models.Student.email == email).first()
 
 def create_student(db: Session, student: schemas.StudentCreate):
-    # 2. Hasheamos la contraseña antes de guardarla
     hashed_password = get_password_hash(student.password)
-    
-    db_student = models.Student(
-        email=student.email,
-        display_name=student.display_name,
-        hashed_password=hashed_password 
-    )
+    db_student = models.Student(email=student.email, display_name=student.display_name, hashed_password=hashed_password)
     db.add(db_student)
     db.commit()
     db.refresh(db_student)
     return db_student
 
-def get_student_by_email(db: Session, email: str):
-    """Busca y devuelve un estudiante por su email."""
-    return db.query(models.Student).filter(models.Student.email == email).first()
-
-# --- FUNCIONES PARA CATEGORÍAS ---
+def update_student_favorite_categories(db: Session, student_id: int, category_ids: List[int]):
+    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    if not student:
+        return None
+    new_categories = db.query(models.Category).filter(models.Category.id.in_(category_ids)).all()
+    student.favorite_categories = new_categories
+    db.commit()
+    db.refresh(student)
+    return student
 
 def get_categories(db: Session, skip: int = 0, limit: int = 100):
-    """Obtiene una lista de todas las categorías."""
     return db.query(models.Category).offset(skip).limit(limit).all()
 
 def create_initial_categories(db: Session):
-    """Crea las categorías iniciales si la tabla está vacía."""
-    # Primero, comprueba si ya existen categorías
     if db.query(models.Category).count() == 0:
-        print("Base de datos de categorías vacía, creando categorías iniciales...")
-        
+        print("Creando categorías iniciales...")
         initial_categories = [
-            models.Category(name="Alimentación"),
-            models.Category(name="Transporte"),
-            models.Category(name="Alojamiento"),
-            models.Category(name="Ocio"),
-            models.Category(name="Educación"),
-            models.Category(name="Salud"),
-            models.Category(name="Ropa y Accesorios"),
-            models.Category(name="Ingresos"),
-            models.Category(name="Otros")
+            models.Category(name="Hogar y Servicios"), models.Category(name="Educación"),
+            models.Category(name="Salud y Bienestar"), models.Category(name="Deudas y Obligaciones"),
+            models.Category(name="Alimentación"), models.Category(name="Transporte"),
+            models.Category(name="Compras y Cuidado personal"), models.Category(name="Ocio y Vida Social"),
+            models.Category(name="Ahorro e Inversión"), models.Category(name="Gastos Hormiga")
         ]
-        
         db.add_all(initial_categories)
         db.commit()
-        print("Categorías iniciales creadas.")
+        print(f"{len(initial_categories)} categorías creadas.")
     else:
-        print("La base de datos de categorías ya está poblada.")
-
-
-# --- FUNCIÓN PARA CREAR TRANSACCIONES ---
+        print("Categorías ya pobladas.")
 
 def create_student_transaction(db: Session, transaction: schemas.TransactionCreate, student_id: int):
-    """Crea una nueva transacción asociada a un estudiante."""
-    # Creamos un objeto del modelo SQLAlchemy a partir de los datos del esquema
-    db_transaction = models.Transaction(
-        amount=transaction.amount,
-        type=transaction.type,
-        category_id=transaction.category_id,
-        student_id=student_id  # <-- El ID del estudiante se pasa de forma segura
-    )
+    db_transaction = models.Transaction(**transaction.model_dump(), student_id=student_id)
     db.add(db_transaction)
     db.commit()
     db.refresh(db_transaction)
     return db_transaction
 
 def get_student_transactions(db: Session, student_id: int, skip: int = 0, limit: int = 100):
-    """Obtiene una lista de las transacciones de un estudiante específico."""
     return db.query(models.Transaction).filter(models.Transaction.student_id == student_id).offset(skip).limit(limit).all()
 
+def create_income_period(db: Session, student_id: int, period: schemas.IncomePeriodCreate):
+    # Desactivamos cualquier otro período activo para este usuario
+    db.query(models.IncomePeriod).filter(models.IncomePeriod.student_id == student_id).update({"is_active": False})
+    
+    db_period = models.IncomePeriod(
+        **period.model_dump(),
+        student_id=student_id,
+        is_active=True
+    )
+    db.add(db_period)
+    db.commit()
+    db.refresh(db_period)
+    return db_period
+
+def get_current_budget_status(db: Session, student_id: int):
+    """
+    Busca el período de ingresos activo para un estudiante,
+    calcula el gasto total y el saldo restante.
+    """
+    active_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.is_active == True
+    ).first()
+
+    if not active_period:
+        return None # No hay período activo
+
+    # Calcula el gasto total durante el período activo
+    total_spent = db.query(func.sum(models.Transaction.amount)).filter(
+        models.Transaction.student_id == student_id,
+        models.Transaction.type == 'expense',
+        models.Transaction.ts >= active_period.start_date,
+        models.Transaction.ts <= active_period.end_date
+    ).scalar() or 0.0 # Asegura que sea float
+
+    remaining_budget = float(active_period.amount) - total_spent
+
+    # Calcula los días restantes
+    now = datetime.now(timezone.utc)
+    # Asegúrate de que ambas fechas tengan la misma información de zona horaria (o ninguna)
+    end_date_aware = active_period.end_date
+    if end_date_aware.tzinfo is None:
+         end_date_aware = end_date_aware.replace(tzinfo=timezone.utc) # Asume UTC si no hay tz
+         
+    days_left = (end_date_aware - now).days if end_date_aware > now else 0
+
+    return schemas.BudgetStatus(
+        income_period_id=active_period.id,
+        total_income=float(active_period.amount),
+        start_date=active_period.start_date,
+        end_date=active_period.end_date,
+        total_spent=total_spent,
+        remaining_budget=remaining_budget,
+        days_left=days_left,
+        is_active=active_period.is_active
+    )
