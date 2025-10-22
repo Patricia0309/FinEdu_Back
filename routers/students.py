@@ -18,6 +18,10 @@ def create_student_endpoint(student: schemas.StudentCreate, db: Session = Depend
 
 @router.get("/me", response_model=schemas.Student)
 async def read_students_me(current_student: models.Student = Depends(get_current_student)):
+    """
+    Devuelve la información del estudiante actualmente autenticado.
+    """
+    print("Categorías favoritas ANTES de retornar:", current_student.favorite_categories) 
     return current_student
 
 @router.put("/me/categories", response_model=schemas.Student)

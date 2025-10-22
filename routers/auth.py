@@ -4,7 +4,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 # LA LÍNEA CLAVE A CORREGIR:
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from jose import JWTError, jwt
 
 import crud
@@ -48,7 +48,10 @@ def get_current_student(token: str = Depends(oauth2_scheme), db: Session = Depen
     except JWTError:
         raise credentials_exception
 
-    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    student = db.query(models.Student).options(
+    selectinload(models.Student.favorite_categories)
+    ).filter(models.Student.id == student_id).first()
+
     if student is None:
         raise credentials_exception
     return student

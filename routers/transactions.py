@@ -50,6 +50,6 @@ def read_transactions_for_current_user(
 ):
     return crud.get_student_transactions(db, student_id=current_student.id, skip=skip, limit=limit)
 
-@router.get("/categories/", response_model=List[schemas.Category], tags=["Categories"])
+@router.get("/categories/", response_model=List[schemas.Category])
 def read_categories(db: Session = Depends(get_db)):
     return crud.get_categories(db)

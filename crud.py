@@ -112,3 +112,37 @@ def get_current_budget_status(db: Session, student_id: int):
         days_left=days_left,
         is_active=active_period.is_active
     )
+
+def get_income_period_by_id(db: Session, period_id: int, student_id: int):
+    """
+    Obtiene un período de ingresos específico por su ID,
+    verificando que pertenezca al estudiante.
+    """
+    return db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.id == period_id,
+        models.IncomePeriod.student_id == student_id # Security check!
+    ).first()
+
+def update_income_period(db: Session, period_id: int, student_id: int, period_update: schemas.IncomePeriodCreate):
+    """
+    Actualiza un período de ingresos específico para un estudiante.
+    Verifica que el estudiante sea el propietario del período.
+    """
+    db_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.id == period_id,
+        models.IncomePeriod.student_id == student_id # Security check!
+    ).first()
+
+    if not db_period:
+        return None # Not found or doesn't belong to the user
+
+    # Update fields from the request data
+    db_period.amount = period_update.amount
+    db_period.start_date = period_update.start_date
+    db_period.end_date = period_update.end_date
+    # We probably don't want to reactivate it here, just edit details
+    # db_period.is_active = True 
+
+    db.commit()
+    db.refresh(db_period)
+    return db_period
