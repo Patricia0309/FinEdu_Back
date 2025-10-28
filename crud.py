@@ -83,23 +83,28 @@ def get_current_budget_status(db: Session, student_id: int):
     if not active_period:
         return None # No hay período activo
 
-    # Calcula el gasto total durante el período activo
-    total_spent = db.query(func.sum(models.Transaction.amount)).filter(
+    # Calcula el gasto total durante el período activo (resultado puede ser Decimal o None)
+    total_spent_decimal = db.query(func.sum(models.Transaction.amount)).filter(
         models.Transaction.student_id == student_id,
-        models.Transaction.type == 'expense',
+        models.Transaction.type == 'gasto', # Usa 'gasto' como acordamos
         models.Transaction.ts >= active_period.start_date,
         models.Transaction.ts <= active_period.end_date
-    ).scalar() or 0.0 # Asegura que sea float
+    ).scalar()
 
+    # --- CORRECCIÓN AQUÍ ---
+    # Convertimos el resultado Decimal (o None) a float, default 0.0 si es None
+    total_spent = float(total_spent_decimal) if total_spent_decimal is not None else 0.0
+
+    # Ahora ambos son floats, la resta funcionará
     remaining_budget = float(active_period.amount) - total_spent
+    # --- FIN CORRECCIÓN ---
 
     # Calcula los días restantes
     now = datetime.now(timezone.utc)
-    # Asegúrate de que ambas fechas tengan la misma información de zona horaria (o ninguna)
     end_date_aware = active_period.end_date
     if end_date_aware.tzinfo is None:
-         end_date_aware = end_date_aware.replace(tzinfo=timezone.utc) # Asume UTC si no hay tz
-         
+         end_date_aware = end_date_aware.replace(tzinfo=timezone.utc)
+
     days_left = (end_date_aware - now).days if end_date_aware > now else 0
 
     return schemas.BudgetStatus(
