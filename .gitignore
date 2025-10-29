@@ -12,6 +12,7 @@ venv.bak/
 .envrc
 .secret
 secrets.json
+firebase-credentials.json # <-- ¡AÑADIDO! No subir credenciales secretas
 
 # ---- Archivos de compilación / cache ----
 __pycache__/
@@ -49,7 +50,7 @@ htmlcov/
 .cache/
 
 # ---- Documentación generada ----
-build/
+# build/ <-- Cuidado si tienes Flutter, su build va aquí
 dist/
 site/
 *.egg-info/
@@ -62,3 +63,21 @@ docker-compose.override.yml
 # ---- Otros ----
 *.bak
 *.swp
+
+firebase-credentials.json
+
+
+# === SI ESTE ARCHIVO ESTÁ EN LA RAÍZ (FindEdu/) ===
+# === CONSIDERA AÑADIR IGNORES DE FLUTTER ===
+# .dart_tool/
+# .flutter-plugins
+# .flutter-plugins-dependencies
+# .packages
+# build/ # (Flutter usa esta carpeta)
+# <tu_proyecto_flutter>/ios/Pods/
+# <tu_proyecto_flutter>/ios/.symlinks/
+# <tu_proyecto_flutter>/ios/Flutter/App.framework
+# <tu_proyecto_flutter>/ios/Flutter/engine_*.xcframework
+# <tu_proyecto_flutter>/ios/Flutter/Flutter.podspec
+# <tu_proyecto_flutter>/ios/Flutter/Generated.xcconfig
+# <tu_proyecto_flutter>/.ios/

@@ -34,6 +34,7 @@ class Student(Base):
     display_name = Column(String, index=True)
     hashed_password = Column(String, nullable=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
+    fcm_token = Column(String, nullable=True, index=True)
     transactions = relationship("Transaction", back_populates="owner")
     favorite_categories = relationship("Category", secondary=student_favorite_category_association)
     income_periods = relationship("IncomePeriod", back_populates="student")

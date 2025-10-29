@@ -27,6 +27,14 @@ def update_student_favorite_categories(db: Session, student_id: int, category_id
     db.refresh(student)
     return student
 
+def update_student_fcm_token(db: Session, student_id: int, fcm_token: str):
+    db_student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    if db_student:
+        db_student.fcm_token = fcm_token
+        db.commit()
+        db.refresh(db_student)
+    return db_student
+
 def get_categories(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Category).offset(skip).limit(limit).all()
 

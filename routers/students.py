@@ -34,3 +34,12 @@ def set_student_favorite_categories(
         db=db, student_id=current_student.id, category_ids=categories_update.category_ids
     )
     return updated_student
+
+@router.put("/me/fcm-token", response_model=schemas.Student)
+def set_fcm_token(
+    token_update: schemas.FCMTokenUpdate,
+    db: Session = Depends(get_db),
+    current_student: models.Student = Depends(get_current_student)
+):
+    """Actualiza el token FCM del dispositivo para el usuario actual."""
+    return crud.update_student_fcm_token(db, student_id=current_student.id, fcm_token=token_update.fcm_token)

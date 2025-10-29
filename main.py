@@ -3,10 +3,19 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from database import engine, SessionLocal
+import firebase_admin
+from firebase_admin import credentials
 import models
 import crud
 # LA LÍNEA CLAVE A CORREGIR:
 from routers import students, auth, transactions, analytics, budgets
+
+# --- INICIALIZACIÓN DE FIREBASE ---
+# Carga las credenciales desde el archivo JSON
+cred = credentials.Certificate("firebase-credentials.json") 
+# Inicializa la app de Firebase
+firebase_admin.initialize_app(cred)
+# --- FIN INICIALIZACIÓN ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

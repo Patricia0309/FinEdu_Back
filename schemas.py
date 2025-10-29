@@ -31,6 +31,7 @@ class Student(StudentBase):
     id: int
     created_at: datetime
     favorite_categories: List[Category] = []
+    fcm_token: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -83,3 +84,6 @@ class BudgetStatus(BaseModel):
     remaining_budget: float
     days_left: int
     is_active: bool
+
+class FCMTokenUpdate(BaseModel): 
+    fcm_token: str
