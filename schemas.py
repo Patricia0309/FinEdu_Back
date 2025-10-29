@@ -40,7 +40,7 @@ class StudentCategoryUpdate(BaseModel):
 class TransactionBase(BaseModel):
     amount: float
     type: str
-    category_id: int
+    category_id: Optional[int] = None
 
 class TransactionCreate(TransactionBase):
     pass
@@ -49,7 +49,7 @@ class Transaction(TransactionBase):
     id: int
     ts: datetime
     student_id: int
-    category: Category 
+    category: Optional[Category] = None
     class Config:
         from_attributes = True
 
