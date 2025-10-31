@@ -21,6 +21,17 @@ firebase_admin.initialize_app(cred)
 async def lifespan(app: FastAPI):
     print("Iniciando aplicación y sembrando la base de datos...")
     db = SessionLocal()
+    
+    # --- INICIALIZAR FIREBASE ADMIN ---
+    try:
+        # Asegúrate que la ruta al JSON sea correcta DENTRO del contenedor Docker
+        cred = credentials.Certificate("/app/findedu-service-account.json") # <-- ¡CAMBIA ESTA RUTA!
+        firebase_admin.initialize_app(cred)
+        print("Firebase Admin SDK inicializado.")
+    except Exception as e:
+        print(f"Error inicializando Firebase Admin SDK: {e}")
+    # --- FIN INICIALIZACIÓN ---
+
     try:
         crud.create_initial_categories(db)
     finally:

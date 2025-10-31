@@ -42,6 +42,8 @@ class TransactionBase(BaseModel):
     amount: float
     type: str
     category_id: Optional[int] = None
+    note: Optional[str] = None
+    date: Optional[datetime] = None
 
 class TransactionCreate(TransactionBase):
     pass

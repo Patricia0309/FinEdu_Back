@@ -24,6 +24,7 @@ class Transaction(Base):
     ts = Column(TIMESTAMP(timezone=True), server_default=func.now())
     student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("category.id"), nullable=True)
+    note = Column(String, nullable=True)
     owner = relationship("Student", back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
 

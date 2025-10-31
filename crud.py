@@ -55,7 +55,16 @@ def create_initial_categories(db: Session):
         print("Categorías ya pobladas.")
 
 def create_student_transaction(db: Session, transaction: schemas.TransactionCreate, student_id: int):
-    db_transaction = models.Transaction(**transaction.model_dump(), student_id=student_id)
+    # 1. Convierte el schema de Pydantic a un diccionario
+    data_dict = transaction.model_dump(exclude_unset=True) # Excluye campos no enviados
+
+    # 2. Renombra la llave 'date' (del frontend) a 'ts' (del modelo DB)
+    if 'date' in data_dict:
+        data_dict['ts'] = data_dict.pop('date')
+    
+    # 3. Crea el objeto del modelo usando el diccionario corregido
+    db_transaction = models.Transaction(**data_dict, student_id=student_id)
+    
     db.add(db_transaction)
     db.commit()
     db.refresh(db_transaction)
