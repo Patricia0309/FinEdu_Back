@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     # --- INICIALIZAR FIREBASE ADMIN ---
     try:
         # Asegúrate que la ruta al JSON sea correcta DENTRO del contenedor Docker
-        cred = credentials.Certificate("/app/findedu-service-account.json") # <-- ¡CAMBIA ESTA RUTA!
+        cred = credentials.Certificate("/app/firebase-credentials.json") # <-- ¡CAMBIA ESTA RUTA!
         firebase_admin.initialize_app(cred)
         print("Firebase Admin SDK inicializado.")
     except Exception as e:

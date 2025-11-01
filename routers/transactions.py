@@ -40,32 +40,38 @@ def create_transaction_for_current_user(
             budget_amount = float(active_period.amount)
             new_total_spent = total_spent + transaction.amount
             
-            # --- LÓGICA DE NOTIFICACIONES CORREGIDA ---
+            # --- LÓGICA DE NOTIFICACIONES MEJORADA ---
             
+            # Evitamos dividir por cero si el presupuesto es 0
             current_percentage = (total_spent / budget_amount) * 100 if budget_amount > 0 else 0
             new_percentage = (new_total_spent / budget_amount) * 100 if budget_amount > 0 else 0
 
-            # 1. Si el nuevo total es >= 100%, envía esta notificación SIEMPRE.
-            if new_percentage >= 100:
-                # (Solo la enviamos si el gasto anterior era menor a 100 para no spamear,
-                # pero si quieres spamear, quita la segunda condición)
-                if current_percentage < 100: # <-- ESTO ES RECOMENDADO PARA EVITAR SPAM
-                    send_fcm_notification(
-                        token=current_student.fcm_token,
-                        title="🚫 ¡Presupuesto Excedido!",
-                        body=f"Has excedido tu presupuesto. Este gasto de ${transaction.amount} se registrará como Gasto Extra."
-                    )
+            # 1. Si el nuevo total ES EXACTAMENTE 100% (y antes era menos)
+            if new_percentage == 100 and current_percentage < 100:
+                send_fcm_notification(
+                    token=current_student.fcm_token,
+                    title="🎉 ¡Presupuesto Alcanzado!",
+                    body="¡Llegaste al 100% de tu presupuesto! Tus próximos gastos se registrarán como 'Gasto Extra'."
+                )
             
-            # 2. Si (si no) el gasto HACE que se cruce el 90% (y aún no se había cruzado)
-            elif current_percentage <= 90 and new_percentage >= 90:
+            # 2. Si el nuevo total SUPERA el 100% (y antes era menos)
+            elif new_percentage > 100 and current_percentage < 100:
+                send_fcm_notification(
+                    token=current_student.fcm_token,
+                    title="🚫 ¡Presupuesto Excedido!",
+                    body=f"Has excedido tu presupuesto. Este gasto de ${transaction.amount} se registrará como Gasto Extra."
+                )
+            
+            # 3. Si (si no) se cruza el 90%
+            elif current_percentage < 90 and new_percentage >= 90:
                 send_fcm_notification(
                     token=current_student.fcm_token,
                     title="🚨 ¡Presupuesto Bajo!",
                     body=f"Has gastado más del 90% de tu presupuesto (${new_total_spent:.2f} de ${budget_amount:.2f})."
                 )
             
-            # 3. Si (si no) el gasto HACE que se cruce el 50% (y aún no se había cruzado)
-            elif current_percentage <= 50 and new_percentage >= 50:
+            # 4. Si (si no) se cruza el 50%
+            elif current_percentage < 50 and new_percentage >= 50:
                 send_fcm_notification(
                     token=current_student.fcm_token,
                     title="⚠️ Mitad de Presupuesto",
