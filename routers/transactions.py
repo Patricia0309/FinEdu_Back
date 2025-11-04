@@ -85,8 +85,6 @@ def create_transaction_for_current_user(
     
     return new_transaction
 
-# --- Endpoints GET (sin cambios) ---
-
 @router.get("/", response_model=List[schemas.Transaction])
 def read_transactions_for_current_user(
     skip: int = 0, limit: int = 100, db: Session = Depends(get_db),

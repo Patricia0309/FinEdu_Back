@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, TIMESTAMP, NUMERIC, ForeignKey, Text, Table, Boolean
+from sqlalchemy import Column, Integer, String, TIMESTAMP, NUMERIC, ForeignKey, Text, Table, Boolean, Float, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -51,3 +51,21 @@ class IncomePeriod(Base):
     
     student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
     student = relationship("Student", back_populates="income_periods")
+
+class AssociationRule(Base):
+    __tablename__ = "association_rule"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # "Antecedentes" (LHS) - Ej: ['Transporte', 'Alimentación']
+    antecedents = Column(ARRAY(String), nullable=False)
+    
+    # "Consecuentes" (RHS) - Ej: ['Gastos Hormiga']
+    consequents = Column(ARRAY(String), nullable=False)
+    
+    # Métricas estadísticas de la regla
+    support = Column(Float, nullable=False)
+    confidence = Column(Float, nullable=False)
+    lift = Column(Float, nullable=False)
+    
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

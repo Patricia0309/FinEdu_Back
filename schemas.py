@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 import re
 
 class CategoryBase(BaseModel):
@@ -62,7 +62,8 @@ class Token(BaseModel):
 
 class ProfileResponse(BaseModel):
     profile: str
-    description: str
+    justification: str  # El "por qué" (Ej: "Tu tasa de ahorro es baja (5%)")
+    recommendation: str # El "qué hacer" (Ej: "Enfócate en tu fondo de emergencia...")
 
 class IncomePeriodCreate(BaseModel):
     amount: float
@@ -89,3 +90,34 @@ class BudgetStatus(BaseModel):
 
 class FCMTokenUpdate(BaseModel): 
     fcm_token: str
+
+class AssociationRuleResponse(BaseModel):
+    antecedents: List[str]
+    consequents: List[str]
+    support: float
+    confidence: float
+    lift: float
+
+    class Config:
+        from_attributes = True
+
+class Recommendation(BaseModel):
+    type: str  # Ej: "profile", "pattern", "content"
+    title: str
+    body: str
+
+class BudgetPeriodSummary(BaseModel):
+    """Un resumen simple de un período de presupuesto."""
+    start_date: datetime
+    end_date: datetime
+    budgeted_amount: float
+    total_spent: float
+
+    class Config:
+        from_attributes = True
+
+class BudgetTendencyResponse(BaseModel):
+    """La respuesta completa del endpoint de tendencias."""
+    current_period: Optional[BudgetPeriodSummary] = None
+    previous_period: Optional[BudgetPeriodSummary] = None
+    comparison: Optional[dict] = None # Para ej. {"spending_change_percentage": 16.67}

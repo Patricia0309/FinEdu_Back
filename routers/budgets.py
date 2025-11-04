@@ -8,6 +8,7 @@ import crud
 import models
 from database import get_db
 from routers.auth import get_current_student
+from typing import List
 
 router = APIRouter(
     prefix="/budgets",
@@ -87,3 +88,15 @@ def get_budget_status(
             detail="No tienes un período de presupuesto activo."
         )
     return budget_status
+
+@router.get("/history", response_model=List[schemas.IncomePeriod])
+def read_budget_history(
+    db: Session = Depends(get_db),
+    current_student: models.Student = Depends(get_current_student)
+):
+    """
+    Obtiene el historial de los períodos de presupuesto
+    (ej. últimos 60 días) para el usuario autenticado.
+    """
+    history = crud.get_budget_history(db=db, student_id=current_student.id)
+    return history
