@@ -1,52 +1,43 @@
 # backend/routers/analytics.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List 
+from typing import List
 import models, schemas, crud
 from database import get_db
 from routers.auth import get_current_student
-# Importamos las funciones y el mapa que necesitamos DESDE PROFILING
+# Importamos las funciones desde 'profiling'
 from analytics.profiling import (
     train_and_cluster_students, 
     get_student_features, 
-    PROFILE_MAP
+    PROFILE_MAP,
+    run_apriori_analysis,
+    generate_recommendations,
+    create_demo_data
 )
-from analytics import profiling # Importa el módulo profiling para la demo
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
-# --- ENDPOINT DE PERFIL ACTUALIZADO ---
 @router.post("/profile", response_model=schemas.ProfileResponse)
 def get_user_profile(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Calcula, justifica y devuelve el perfil financiero del usuario autenticado.
-    """
-    
-    # 1. Obtenemos las métricas individuales (EL "POR QUÉ")
-    # Llama a la función desde profiling, no desde crud
     user_metrics = get_student_features(db, student_id=current_student.id)
-
-    # 2. Obtenemos el resultado del clustering (EL "QUIÉN")
     results_df = train_and_cluster_students(db)
 
-    # --- Manejo de Errores ---
     if results_df is None or results_df.empty:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No hay suficientes datos de usuarios en el sistema para generar perfiles.")
     
     user_result = results_df[results_df['student_id'] == current_student.id]
     
     if user_result.empty or user_metrics is None:
-        profile_data = PROFILE_MAP[4] # Perfil "El Explorador Financiero"
+        profile_data = PROFILE_MAP[4]
         return schemas.ProfileResponse(
             profile=profile_data["profile"],
             justification="Aún estás empezando. Sigue registrando gastos para que podamos encontrar tus patrones.",
             recommendation=profile_data["recommendation"]
         )
 
-    # --- 3. Construcción de la Respuesta ---
     profile_cluster_id = user_result.iloc[0]['cluster']
     profile_name = user_result.iloc[0]['profile_name']
     recommendation = PROFILE_MAP[profile_cluster_id]["recommendation"]
@@ -67,44 +58,26 @@ def get_user_profile(
         recommendation=recommendation
     )
 
-# --- Endpoint para obtener Reglas Apriori ---
 @router.get("/rules", response_model=List[schemas.AssociationRuleResponse], summary="Obtiene las reglas de asociación (Apriori)")
 def get_apriori_rules(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Obtiene la lista de reglas de asociación de gastos (Apriori)
-    que han sido calculadas por el sistema.
-    """
     rules = crud.get_association_rules(db)
     return rules
 
-# --- Endpoint de Demo Apriori ---
 @router.post("/run-apriori-demo", response_model=List[schemas.AssociationRuleResponse], summary="[DEMO] Ejecuta Apriori con datos de prueba")
 def run_apriori_analysis_demo(db: Session = Depends(get_db)):
-    """
-    ¡SOLO PARA DEMOSTRACIÓN!
-    1. Borra datos antiguos y crea un set de datos de prueba con patrones.
-    2. Ejecuta el algoritmo Apriori sobre esos datos.
-    3. Guarda y devuelve las reglas encontradas.
-    """
-    crud.create_demo_data(db)
-    found_rules = profiling.run_apriori_analysis(db)
+    create_demo_data(db) # Llama a la función desde profiling
+    found_rules = run_apriori_analysis(db) # Llama a la función desde profiling
     return found_rules
 
-# --- Endpoint de Recomendaciones ---
 @router.get("/recommendations", response_model=List[schemas.Recommendation], summary="Obtiene recomendaciones personalizadas")
 def get_recommendations_for_user(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Genera y devuelve una lista de recomendaciones personalizadas
-    (basadas en K-Means y Apriori) para el usuario autenticado.
-    """
-    recommendations = crud.generate_recommendations(db=db, student_id=current_student.id)
-    
+    recommendations = generate_recommendations(db=db, student_id=current_student.id)
     if not recommendations:
         return [
             schemas.Recommendation(
@@ -113,5 +86,16 @@ def get_recommendations_for_user(
                 body="Continúa registrando tus gastos para recibir análisis y consejos personalizados."
             )
         ]
-        
     return recommendations
+
+@router.get("/me/rules", response_model=List[schemas.AssociationRuleResponse], summary="Obtiene las reglas que el usuario ha 'activado'")
+def get_my_triggered_rules(
+    db: Session = Depends(get_db),
+    current_student: models.Student = Depends(get_current_student)
+):
+    """
+    Obtiene una lista de las reglas de asociación que el comportamiento
+    reciente del usuario (últimos 30 días) ha activado.
+    """
+    rules = crud.get_triggered_rules(db=db, student_id=current_student.id)
+    return rules

@@ -1,14 +1,11 @@
 # backend/routers/budgets.py
-# Add HTTPException and status to this import
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone # Import timezone for date comparison
-import schemas
-import crud
-import models
+from typing import List
+from datetime import datetime, timezone
+import schemas, crud, models
 from database import get_db
 from routers.auth import get_current_student
-from typing import List
 
 router = APIRouter(
     prefix="/budgets",
@@ -21,10 +18,6 @@ def create_new_income_period(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Crea un nuevo período de presupuesto para el usuario autenticado.
-    Esto desactivará cualquier período anterior.
-    """
     return crud.create_income_period(db=db, student_id=current_student.id, period=period)
 
 @router.put("/income-period/{period_id}", response_model=schemas.IncomePeriod)
@@ -34,9 +27,6 @@ def update_existing_income_period(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Actualiza un período de presupuesto existente para el usuario autenticado.
-    """
     updated_period = crud.update_income_period(
         db=db,
         period_id=period_id,
@@ -56,9 +46,6 @@ def read_specific_income_period(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Obtiene un período de presupuesto específico por ID para el usuario autenticado.
-    """
     db_period = crud.get_income_period_by_id(
         db=db,
         period_id=period_id,
@@ -76,27 +63,51 @@ def get_budget_status(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
-    """
-    Obtiene el estado actual del presupuesto (período activo,
-    gasto total, saldo restante) para el usuario autenticado.
-    """
     budget_status = crud.get_current_budget_status(db=db, student_id=current_student.id)
     if not budget_status:
-        # The line causing the error before the fix:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No tienes un período de presupuesto activo."
         )
     return budget_status
 
-@router.get("/history", response_model=List[schemas.IncomePeriod])
-def read_budget_history(
+# --- ENDPOINT DE HISTORIAL (VERSIÓN CORRECTA) ---
+@router.get("/history", response_model=List[schemas.IncomePeriodHistory])
+def get_budget_history(
     db: Session = Depends(get_db),
-    current_student: models.Student = Depends(get_current_student)
+    current_user: models.Student = Depends(get_current_student)
 ):
-    """
-    Obtiene el historial de los períodos de presupuesto
-    (ej. últimos 60 días) para el usuario autenticado.
-    """
-    history = crud.get_budget_history(db=db, student_id=current_student.id)
-    return history
+    # 1. Obtenemos la fecha y hora actual
+    now = datetime.now() # O datetime.now(timezone.utc) si tus fechas de BD tienen timezone
+
+    # 2. Consultamos la BD
+    historical_budgets = crud.get_budget_history(db=db, student_id=current_user.id)
+
+    # 3. Construimos la lista de respuesta
+    response_list = []
+    
+    for budget in historical_budgets:
+        
+        # 4. Calculamos el gasto total
+        total_spent_decimal = sum(
+            t.amount for t in budget.transactions if t.type == 'gasto' # 'gasto' o 'expense'
+        )
+        total_spent_float = float(total_spent_decimal)
+        
+        # 6. Calculamos el restante
+        remaining = budget.total_income - total_spent_float
+        
+        # 7. Creamos el objeto de respuesta Pydantic
+        history_item = schemas.IncomePeriodHistory(
+            income_period_id=budget.income_period_id,
+            start_date=budget.start_date,
+            end_date=budget.end_date,
+            total_income=budget.total_income,
+            total_spent=total_spent_float,
+            remaining_budget=remaining,
+            is_active=False
+        )
+        response_list.append(history_item)
+
+    # 8. Devolvemos la lista
+    return response_list
