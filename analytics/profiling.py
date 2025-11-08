@@ -180,6 +180,12 @@ def generate_recommendations(db: Session, student_id: int):
 
 # --- LÓGICA DE DEMO ---
 def create_demo_data(db: Session):
+    """
+    Crea un set de usuarios y transacciones de prueba (20 usuarios x 20+ transacciones)
+    con patrones tanto para K-Means como para Apriori, usando las 10 categorías existentes.
+    """
+    
+    # 1. Limpiar datos antiguos
     print("LOG: Limpiando datos antiguos de la demo...")
     db.query(models.AssociationRule).delete()
     db.query(models.Transaction).delete()
@@ -189,22 +195,30 @@ def create_demo_data(db: Session):
     db.commit()
     print("LOG: Datos antiguos limpiados.")
 
+    # 2. Obtener IDs de categorías clave
     categories = db.query(models.Category).all()
+    
     cat_transporte = next((c for c in categories if c.name == "Transporte"), None)
     cat_hormiga = next((c for c in categories if c.name == "Gastos Hormiga"), None)
-    cat_ingresos = next((c for c in categories if c.name == "Ingresos"), None)
-    noise_categories = [c for c in categories if c.name not in ["Transporte", "Gastos Hormiga", "Ingresos", "Ahorro e Inversión"]]
+    
+    # --- CORRECCIÓN AQUÍ ---
+    # Usamos "Ahorro e Inversión" como placeholder para los ingresos
+    cat_placeholder_for_income = next((c for c in categories if c.name == "Ahorro e Inversión"), None)
+    # --- FIN DE LA CORRECCIÓN ---
 
-    if not all([cat_transporte, cat_hormiga, cat_ingresos, noise_categories]):
-        print(f"ERROR: No se encontraron las categorías de demo. Faltan: "
-              f"{'Transporte' if not cat_transporte else ''} "
-              f"{'Gastos Hormiga' if not cat_hormiga else ''} "
-              f"{'Ingresos' if not cat_ingresos else ''}")
+    noise_categories = [
+        c for c in categories 
+        if c.name not in ["Transporte", "Gastos Hormiga", "Ahorro e Inversión"]
+    ]
+
+    if not all([cat_transporte, cat_hormiga, cat_placeholder_for_income, noise_categories]):
+        print("ERROR: No se encontraron las categorías de demo. Asegúrate de que existan.")
         return
 
+    # 3. Crear usuarios con patrones
     print(f"LOG: Creando 20 usuarios demo con presupuestos y transacciones...")
     
-    for i in range(20):
+    for i in range(20): # Crear 20 usuarios
         student = crud.create_student(db, schemas.StudentCreate(
             email=f"user{i}@demo.com",
             display_name=f"Usuario Demo {i}",
@@ -226,13 +240,24 @@ def create_demo_data(db: Session):
         db.commit() 
         db.refresh(demo_period)
 
-        db.add(models.Transaction(student_id=student.id, amount=total_income_demo, type='income', category_id=cat_ingresos.id, ts=start_date_demo, income_period_id=demo_period.income_period_id))
+        # Añadir 1 ingreso (type='income') asignado a la categoría placeholder
+        db.add(models.Transaction(
+            student_id=student.id, 
+            amount=total_income_demo, 
+            type='income', 
+            category_id=cat_placeholder_for_income.id, # <-- CORREGIDO
+            ts=start_date_demo, 
+            income_period_id=demo_period.income_period_id
+        ))
         
+        # 15 usuarios (75%) tendrán el patrón (Transporte -> Gastos Hormiga)
         if i < 15:
             db.add(models.Transaction(student_id=student.id, amount=50, type='gasto', category_id=cat_transporte.id, ts=start_date_demo + timedelta(days=2), income_period_id=demo_period.income_period_id))
             db.add(models.Transaction(student_id=student.id, amount=20, type='gasto', category_id=cat_hormiga.id, ts=start_date_demo + timedelta(days=3), income_period_id=demo_period.income_period_id))
-            for j in range(18):
+            for j in range(18): # Rellenar con 18 transacciones "ruido"
                 db.add(models.Transaction(student_id=student.id, amount=random.randint(10, 200), type='gasto', category_id=random.choice(noise_categories).id, ts=start_date_demo + timedelta(days=j % 14), income_period_id=demo_period.income_period_id))
+        
+        # 5 usuarios (25%) tendrán 20 transacciones aleatorias
         else:
             for j in range(20):
                 db.add(models.Transaction(student_id=student.id, amount=random.randint(10, 200), type='gasto', category_id=random.choice(noise_categories).id, ts=start_date_demo + timedelta(days=j % 14), income_period_id=demo_period.income_period_id))

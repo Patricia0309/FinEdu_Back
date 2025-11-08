@@ -48,17 +48,24 @@ class FCMTokenUpdate(BaseModel):
 # =============================================================================
 class TransactionBase(BaseModel):
     amount: float
-    type: str 
-    category_id: int
+    type: str # 'income' o 'gasto'
     note: Optional[str] = None
     income_period_id: int
+    
+    # --- CAMBIO AQUÍ ---
+    # La categoría es opcional (para los ingresos)
+    category_id: Optional[int] = None
+
 class TransactionCreate(TransactionBase):
-    pass
+    pass # Hereda los campos de TransactionBase
+
 class Transaction(TransactionBase):
     id: int
     ts: datetime
     student_id: int
-    category: Category 
+    # La categoría devuelta también puede ser nula
+    category: Optional[Category] = None 
+
     class Config:
         from_attributes = True
 

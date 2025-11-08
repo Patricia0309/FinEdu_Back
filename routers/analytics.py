@@ -99,3 +99,23 @@ def get_my_triggered_rules(
     """
     rules = crud.get_triggered_rules(db=db, student_id=current_student.id)
     return rules
+
+@router.get("/tendency", response_model=schemas.BudgetTendencyResponse, summary="Compara el presupuesto actual con el anterior")
+def get_spending_tendency(
+    db: Session = Depends(get_db),
+    current_student: models.Student = Depends(get_current_student)
+):
+    """
+    Compara el gasto del período de presupuesto activo actual
+    con el gasto del período completado más reciente.
+    """
+    # Esta función SÍ está en crud.py, por lo que la llamamos con crud.
+    tendency_data = crud.get_budget_tendency(db=db, student_id=current_student.id)
+    
+    if not tendency_data.current_period:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontró un período de presupuesto activo. Por favor, crea uno."
+        )
+        
+    return tendency_data

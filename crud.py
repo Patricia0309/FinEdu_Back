@@ -41,15 +41,20 @@ def get_categories(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Category).offset(skip).limit(limit).all()
 
 def create_initial_categories(db: Session):
+    """Crea las categorías iniciales si la tabla está vacía."""
     if db.query(models.Category).count() == 0:
         print("Creando categorías iniciales...")
         initial_categories = [
-            models.Category(name="Ingresos"), # Añadida para la demo
-            models.Category(name="Hogar y Servicios"), models.Category(name="Educación"),
-            models.Category(name="Salud y Bienestar"), models.Category(name="Deudas y Obligaciones"),
-            models.Category(name="Alimentación"), models.Category(name="Transporte"),
-            models.Category(name="Compras y Cuidado personal"), models.Category(name="Ocio y Vida Social"),
-            models.Category(name="Ahorro e Inversión"), models.Category(name="Gastos Hormiga")
+            models.Category(name="Hogar y Servicios"),
+            models.Category(name="Educación"),
+            models.Category(name="Salud y Bienestar"),
+            models.Category(name="Deudas y Obligaciones"),
+            models.Category(name="Alimentación"),
+            models.Category(name="Transporte"),
+            models.Category(name="Compras y Cuidado personal"),
+            models.Category(name="Ocio y Vida Social"),
+            models.Category(name="Ahorro e Inversión"),
+            models.Category(name="Gastos Hormiga")
         ]
         db.add_all(initial_categories)
         db.commit()
@@ -216,3 +221,71 @@ def get_triggered_rules(db: Session, student_id: int):
             triggered_rules.append(rule)
             
     return triggered_rules
+
+def get_budget_tendency(db: Session, student_id: int):
+    """
+    Compara el período de presupuesto activo actual con el período completado
+    más reciente para el análisis de tendencias.
+    """
+    
+    # 1. Obtener el período activo
+    active_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.is_active == True
+    ).first()
+
+    # 2. Obtener el período anterior más reciente
+    previous_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.is_active == False,
+        models.IncomePeriod.end_date <= datetime.now(timezone.utc)
+    ).order_by(models.IncomePeriod.end_date.desc()).first()
+
+    current_summary = None
+    previous_summary = None
+    comparison = {}
+
+    # 3. Procesar el período activo (si existe)
+    if active_period:
+        active_spent_decimal = db.query(func.sum(models.Transaction.amount)).filter(
+            models.Transaction.student_id == student_id,
+            models.Transaction.type == 'gasto',
+            models.Transaction.income_period_id == active_period.income_period_id
+        ).scalar()
+        active_spent = float(active_spent_decimal) if active_spent_decimal is not None else 0.0
+        
+        current_summary = schemas.BudgetPeriodSummary(
+            start_date=active_period.start_date,
+            end_date=active_period.end_date,
+            budgeted_amount=float(active_period.total_income),
+            total_spent=active_spent
+        )
+
+    # 4. Procesar el período anterior (si existe)
+    if previous_period:
+        prev_spent_decimal = db.query(func.sum(models.Transaction.amount)).filter(
+            models.Transaction.student_id == student_id,
+            models.Transaction.type == 'gasto',
+            models.Transaction.income_period_id == previous_period.income_period_id
+        ).scalar()
+        prev_spent = float(prev_spent_decimal) if prev_spent_decimal is not None else 0.0
+        
+        previous_summary = schemas.BudgetPeriodSummary(
+            start_date=previous_period.start_date,
+            end_date=previous_period.end_date,
+            budgeted_amount=float(previous_period.total_income),
+            total_spent=prev_spent
+        )
+
+    # 5. Calcular la comparación (si tenemos ambos períodos)
+    if current_summary and previous_summary and previous_summary.total_spent > 0:
+        change = ((current_summary.total_spent - previous_summary.total_spent) / previous_summary.total_spent) * 100
+        comparison = {"spending_change_percentage": round(change, 2)}
+    elif current_summary and previous_summary:
+        comparison = {"spending_change_percentage": 0.0}
+
+    return schemas.BudgetTendencyResponse(
+        current_period=current_summary,
+        previous_period=previous_summary,
+        comparison=comparison
+    )

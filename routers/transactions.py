@@ -37,7 +37,7 @@ def create_transaction_for_current_user(
             ).scalar()
             total_spent = float(total_spent_decimal) if total_spent_decimal is not None else 0.0
             
-            budget_amount = float(active_period.amount)
+            budget_amount = float(active_period.total_income)
             new_total_spent = total_spent + transaction.amount
             
             # --- LÓGICA DE NOTIFICACIONES MEJORADA ---
