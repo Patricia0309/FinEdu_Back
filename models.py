@@ -75,3 +75,11 @@ class AssociationRule(Base):
     confidence = Column(Float, nullable=False)
     lift = Column(Float, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+class Microcontent(Base):
+    __tablename__ = "microcontent"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False, index=True)
+    body = Column(Text, nullable=False) # 'Text' es para texto largo
+    tag = Column(String, index=True) # Para filtrar: "ahorro", "deuda", etc.

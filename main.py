@@ -7,45 +7,50 @@ import firebase_admin
 from firebase_admin import credentials
 import models
 import crud
-# LA LÍNEA CLAVE A CORREGIR:
-from routers import students, auth, transactions, analytics, budgets
+# Importamos todos tus routers
+from routers import students, auth, transactions, analytics, budgets, content
 
-# --- INICIALIZACIÓN DE FIREBASE ---
-# Carga las credenciales desde el archivo JSON
-cred = credentials.Certificate("firebase-credentials.json") 
-# Inicializa la app de Firebase
-firebase_admin.initialize_app(cred)
-# --- FIN INICIALIZACIÓN ---
+# --- NO INICIALIZAR FIREBASE AQUÍ ---
+# (Hemos movido este bloque al 'lifespan')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Iniciando aplicación y sembrando la base de datos...")
-    db = SessionLocal()
     
-    # --- INICIALIZAR FIREBASE ADMIN ---
+    # --- INICIALIZAR FIREBASE ADMIN (EL LUGAR CORRECTO) ---
     try:
-        # Asegúrate que la ruta al JSON sea correcta DENTRO del contenedor Docker
-        cred = credentials.Certificate("/app/firebase-credentials.json") # <-- ¡CAMBIA ESTA RUTA!
+        # Usamos la ruta simple (relativa al WORKDIR /app)
+        cred = credentials.Certificate("firebase-credentials.json") 
         firebase_admin.initialize_app(cred)
         print("Firebase Admin SDK inicializado.")
+    except ValueError:
+        # Esto maneja el error "app ya existe" si el reloader de Uvicorn se activa
+        print("Firebase Admin SDK ya está inicializado (hot-reload).")
     except Exception as e:
+        # Esto atrapa otros errores (ej. archivo no encontrado)
         print(f"Error inicializando Firebase Admin SDK: {e}")
     # --- FIN INICIALIZACIÓN ---
 
+    # --- SEMBRAR LA BASE DE DATOS ---
+    db = SessionLocal()
     try:
         crud.create_initial_categories(db)
+        crud.create_initial_microcontent(db)
     finally:
         db.close()
+    
     yield
+    
     print("Apagando aplicación...")
 
+# Crear tablas (esto va después de definir el lifespan)
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="FinEdu API",
     description="La API para el proyecto de tesis FinEdu.",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan # Se asigna la función de ciclo de vida
 )
 
 # Incluimos todos los routers
@@ -54,6 +59,7 @@ app.include_router(auth.router)
 app.include_router(transactions.router)
 app.include_router(analytics.router) 
 app.include_router(budgets.router)
+app.include_router(content.router)
 
 @app.get("/", tags=["Root"])
 def read_root():

@@ -139,3 +139,13 @@ class ProfileResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+# --- ESQUEMA PARA MICROCONTENIDOS ---
+class MicrocontentResponse(BaseModel):
+    id: int
+    title: str
+    body: str
+    tag: str
+
+    class Config:
+        from_attributes = True

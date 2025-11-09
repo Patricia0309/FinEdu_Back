@@ -88,17 +88,17 @@ def get_recommendations_for_user(
         ]
     return recommendations
 
-@router.get("/me/rules", response_model=List[schemas.AssociationRuleResponse], summary="Obtiene las reglas que el usuario ha 'activado'")
+@router.get("/me/rules", response_model=List[schemas.AssociationRuleResponse], summary="Obtiene las 10 reglas más sobresalientes que el usuario ha 'activado'")
 def get_my_triggered_rules(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
     """
-    Obtiene una lista de las reglas de asociación que el comportamiento
-    reciente del usuario (últimos 30 días) ha activado.
+    Obtiene una lista de las 10 reglas de asociación más fuertes
+    que el comportamiento reciente del usuario (últimos 30 días) ha activado.
     """
     rules = crud.get_triggered_rules(db=db, student_id=current_student.id)
-    return rules
+    return rules[:10]
 
 @router.get("/tendency", response_model=schemas.BudgetTendencyResponse, summary="Compara el presupuesto actual con el anterior")
 def get_spending_tendency(
@@ -109,13 +109,10 @@ def get_spending_tendency(
     Compara el gasto del período de presupuesto activo actual
     con el gasto del período completado más reciente.
     """
-    # Esta función SÍ está en crud.py, por lo que la llamamos con crud.
     tendency_data = crud.get_budget_tendency(db=db, student_id=current_student.id)
-    
     if not tendency_data.current_period:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No se encontró un período de presupuesto activo. Por favor, crea uno."
         )
-        
     return tendency_data

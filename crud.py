@@ -1,6 +1,6 @@
 # backend/crud.py
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import models
 import schemas
 from security import get_password_hash
@@ -61,6 +61,63 @@ def create_initial_categories(db: Session):
         print(f"{len(initial_categories)} categorías creadas.")
     else:
         print("Categorías ya pobladas.")
+
+def create_initial_microcontent(db: Session):
+    """
+    Crea el contenido educativo inicial si la tabla está vacía.
+    """
+    if db.query(models.Microcontent).count() == 0:
+        print("Creando microcontenidos educativos iniciales...")
+        
+        # --- TUS 20 TARJETAS DE CONTENIDO ---
+        content_cards = [
+            # Tag: Ahorro
+            models.Microcontent(title="¿Qué es un Fondo de Emergencia?", body="Es un 'colchón' de dinero solo para imprevistos (3-6 meses de tus gastos). Es tu primer paso hacia la libertad financiera.", tag="ahorro"),
+            models.Microcontent(title="El Método 50/30/20", body="Una regla simple: 50% de tu ingreso a 'Necesidades' (renta, comida), 30% a 'Deseos' (ocio, compras) y 20% a 'Ahorro y Deudas'.", tag="presupuesto"),
+            models.Microcontent(title="Págate a Ti Mismo Primero", body="Antes de pagar cualquier factura o gastar en ocio, aparta un porcentaje de tu ingreso para ahorro. Trata tu ahorro como el 'gasto' más importante.", tag="ahorro"),
+            models.Microcontent(title="Ahorro vs. Inversión", body="Ahorrar es guardar dinero (seguro, pero pierde valor con la inflación). Invertir es poner tu dinero a trabajar para que crezca (conlleva riesgo).", tag="inversion"),
+
+            # Tag: Deuda
+            models.Microcontent(title="El Peligro del 'Paga Mínimo'", body="Pagar solo el mínimo de tu tarjeta de crédito hace que tu deuda crezca exponencialmente por los intereses. ¡Evítalo a toda costa!", tag="deuda"),
+            models.Microcontent(title="La Bola de Nieve", body="Un método para salir de deudas: paga todas tus deudas del monto más pequeño al más grande. Cada vez que liquidas una, ganas 'momentum' psicológico.", tag="deuda"),
+            models.Microcontent(title="Deuda 'Buena' vs. Deuda 'Mala'", body="Deuda 'buena' es la que te ayuda a generar más valor (ej. un crédito educativo). Deuda 'mala' es la que financia gastos que pierden valor (ej. ropa, fiestas).", tag="deuda"),
+            models.Microcontent(title="¿Qué es el CAT?", body="El Costo Anual Total (CAT) es el número real de lo que te cuesta un crédito (incluye intereses, comisiones, etc.). ¡Compara siempre el CAT, no solo la tasa de interés!", tag="deuda"),
+
+            # Tag: Gastos Hormiga
+            models.Microcontent(title="El Poder Oculto del Gasto Hormiga", body="Ese café de $50, el refresco de $20... parecen inofensivos. Pero $70 al día son $2,100 al mes. ¿Realmente valen la pena?", tag="gastos_hormiga"),
+            models.Microcontent(title="La Regla de los 10 Minutos", body="¿Quieres hacer un gasto hormiga? Espera 10 minutos. Si después de 10 minutos sigues queriéndolo, cómpralo. La mayoría de las veces, el impulso desaparecerá.", tag="gastos_hormiga"),
+            models.Microcontent(title="Prepara tu 'Kit Anti-Hormiga'", body="Lleva siempre una botella de agua reutilizable y un snack saludable en tu mochila. Esto te salvará de comprar impulsivamente en la calle.", tag="gastos_hormiga"),
+            models.Microcontent(title="Ponle Nombre a tu Ahorro", body="En lugar de 'no comprar un café', piensa 'estoy ahorrando para mi próximo concierto'. Darle un objetivo a tu ahorro lo hace más fácil.", tag="gastos_hormiga"),
+
+            # Tag: Presupuesto
+            models.Microcontent(title="Tu Presupuesto no es una Cárcel", body="Un presupuesto no es para restringirte, es una herramienta para darte permiso de gastar sin culpa en las cosas que SÍ te importan.", tag="presupuesto"),
+            models.Microcontent(title="El Presupuesto 'Base Cero'", body="En lugar de ajustar el presupuesto del mes pasado, empieza cada mes desde cero. Asigna cada peso de tu ingreso a una categoría (incluyendo ahorro) hasta que te queden $0.", tag="presupuesto"),
+            models.Microcontent(title="Sobres Digitales", body="Asigna tu presupuesto a 'sobres' o 'apartados' digitales. Cuando el sobre de 'Ocio' se acaba, se acaba. Esto hace el gasto visible y tangible.", tag="presupuesto"),
+            models.Microcontent(title="Revisa tu Presupuesto Semanalmente", body="No esperes a fin de mes. Revisa tus gastos cada domingo por 10 minutos. Es más fácil corregir el rumbo a tiempo que lamentarse después.", tag="presupuesto"),
+
+            # Tag: Inversión
+            models.Microcontent(title="El Interés Compuesto", body="Es la 'magia' de la inversión. Es el interés que ganas sobre el interés que ya ganaste. Por eso, empezar a invertir joven es la mayor ventaja.", tag="inversion"),
+            models.Microcontent(title="¿Qué es CetesDirecto?", body="Es la plataforma más segura para empezar a invertir en México. Le prestas dinero al gobierno y te paga un interés. Es ideal para tu fondo de emergencia.", tag="inversion"),
+            models.Microcontent(title="No Inviertas en lo que no Entiendes", body="Si suena demasiado bueno para ser verdad (criptomonedas milagrosas, Forex), probablemente lo sea. Invierte solo en instrumentos que entiendas.", tag="inversion"),
+            models.Microcontent(title="Diversificar es Protegerse", body="La regla de oro: no pongas todos los huevos en la misma canasta. Distribuye tu dinero en diferentes tipos de inversión para reducir el riesgo.", tag="inversion")
+        ]
+        
+        db.add_all(content_cards)
+        db.commit()
+        print(f"{len(content_cards)} microcontenidos creados.")
+    else:
+        print("Microcontenidos ya poblados.")
+
+def get_microcontent(db: Session, tags: Optional[str] = None, skip: int = 0, limit: int = 100):
+    """
+    Obtiene una lista de microcontenidos, opcionalmente filtrados
+    por una LISTA de tags.
+    """
+    query = db.query(models.Microcontent)
+    if tags:
+        query = query.filter(models.Microcontent.tag.in_(tags))
+    
+    return query.offset(skip).limit(limit).all()
 
 def create_student_transaction(db: Session, transaction: schemas.TransactionCreate, student_id: int):
     # Asumimos que el frontend envía 'income_period_id'
