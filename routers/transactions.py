@@ -51,7 +51,7 @@ def create_transaction_for_current_user(
                 send_fcm_notification(
                     token=current_student.fcm_token,
                     title="🎉 ¡Presupuesto Alcanzado!",
-                    body="¡Llegaste al 100% de tu presupuesto! Tus próximos gastos se registrarán como 'Gasto Extra'."
+                    body="¡Llegaste al 100% de tu presupuesto! Tus próximos gastos se registrarán como 'Gasto extra'."
                 )
             
             # 2. Si el nuevo total SUPERA el 100% (y antes era menos)
@@ -59,7 +59,7 @@ def create_transaction_for_current_user(
                 send_fcm_notification(
                     token=current_student.fcm_token,
                     title="🚫 ¡Presupuesto Excedido!",
-                    body=f"Has excedido tu presupuesto. Este gasto de ${transaction.amount} se registrará como Gasto Extra."
+                    body=f"Has excedido tu presupuesto. Este gasto de ${transaction.amount} se registrará como Gasto extra."
                 )
             
             # 3. Si (si no) se cruza el 90%
