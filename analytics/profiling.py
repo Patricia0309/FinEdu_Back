@@ -131,21 +131,52 @@ def run_apriori_analysis(db: Session):
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=90)
     baskets = get_transaction_baskets(db, start_date=start_date, end_date=end_date)
+    
     if len(baskets) < 10:
         print("LOG: No hay suficientes cestas de datos para ejecutar Apriori.")
         return []
+
     te = TransactionEncoder()
     te_ary = te.fit(baskets).transform(baskets)
     df = pd.DataFrame(te_ary, columns=te.columns_)
+    
     frequent_itemsets = apriori(df, min_support=0.1, use_colnames=True)
+    
     if frequent_itemsets.empty:
-        print("LOG: No se encontraron itemsets frecuentes.")
         return []
+
+    # 1. Generar reglas base
     rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=0.5)
-    rules = rules[rules['lift'] > 1]
+    
     if rules.empty:
-        print("LOG: No se encontraron reglas de asociación significativas.")
         return []
+
+    # --- 🚀 REFINAMIENTO DE REGLAS PARA MEJOR UX ---
+    
+    # A. Filtrado por Cardinalidad: Antecedentes <= 2 y Consecuente == 1
+    # Esto evita recomendaciones excesivamente complejas
+    rules['ant_len'] = rules['antecedents'].apply(len)
+    rules['con_len'] = rules['consequents'].apply(len)
+    rules = rules[(rules['ant_len'] <= 2) & (rules['con_len'] == 1)]
+
+    # B. Filtrado por Lift (Relación estadística fuerte)
+    rules = rules[rules['lift'] > 1.1]
+
+    # C. Eliminación de Redundancia Simétrica (Sets idénticos)
+    # Identificamos el set total (A U B) para tratar A->B y B->A como una sola relación
+    rules['combined_set'] = rules.apply(lambda row: frozenset(set(row['antecedents']) | set(row['consequents'])), axis=1)
+    
+    # Ordenamos por Lift para quedarnos con la versión más potente de la regla
+    rules = rules.sort_values(by='lift', ascending=False)
+    rules = rules.drop_duplicates(subset=['combined_set'])
+
+    # D. Límite de Reglas: Nos quedamos con las Top 10 para no saturar al usuario
+    rules = rules.head(10)
+    
+    # Limpieza de columnas auxiliares
+    rules = rules.drop(columns=['combined_set', 'ant_len', 'con_len'])
+    # --- 🏁 FIN DEL REFINAMIENTO ---
+
     saved_rules = save_association_rules(db, rules)
     return saved_rules
 
