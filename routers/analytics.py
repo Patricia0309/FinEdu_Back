@@ -22,19 +22,41 @@ def get_user_profile(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
+    # 1. Contamos cuántos GASTOS reales tiene el usuario
+    user_expenses_count = db.query(models.Transaction).filter(
+        models.Transaction.student_id == current_student.id,
+        models.Transaction.type == 'gasto'
+    ).count()
+
+    # 2. Si tiene menos de 15, activamos el modo "Progreso"
+    if user_expenses_count < 15:
+        return schemas.ProfileResponse(
+            profile="Perfil en proceso...",
+            is_calculating=True,
+            current_count=user_expenses_count,
+            goal=15,
+            justification=f"Estamos analizando tus hábitos. Te faltan {15 - user_expenses_count} transacciones para desbloquear tu perfil inteligente.",
+            recommendation="Intenta registrar todos tus gastos, por pequeños que sean (café, copias, transporte)."
+        )
+    # 3. Si ya tiene 15 o más, procedemos con la lógica normal
     user_metrics = get_student_features(db, student_id=current_student.id)
     results_df = train_and_cluster_students(db)
 
+    # Caso donde el sistema global aún no tiene 5 usuarios (mínimo para K-Means)
     if results_df is None or results_df.empty:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No hay suficientes datos de usuarios en el sistema para generar perfiles.")
-    
+        return schemas.ProfileResponse(
+            profile="Explorador Financiero",
+            justification="Ya tienes suficientes datos, pero estamos esperando a que más compañeros se unan al análisis global para compararte.",
+            recommendation="¡No te detengas! Tu constancia es el primer paso para el éxito."
+        )
     user_result = results_df[results_df['student_id'] == current_student.id]
     
+    # Si el usuario tiene los 15 gastos pero por alguna razón el algoritmo no lo incluyó
     if user_result.empty or user_metrics is None:
-        profile_data = PROFILE_MAP[4]
+        profile_data = PROFILE_MAP[4] # Perfil "Explorador Financiero" por defecto
         return schemas.ProfileResponse(
             profile=profile_data["profile"],
-            justification="Aún estás empezando. Sigue registrando gastos para que podamos encontrar tus patrones.",
+            justification="Tu perfil se está terminando de procesar. ¡Vuelve en unos minutos!",
             recommendation=profile_data["recommendation"]
         )
 
@@ -45,12 +67,22 @@ def get_user_profile(
     savings_rate_pct = round(user_metrics['savings_rate'] * 100)
     discretionary_ratio_pct = round(user_metrics['discretionary_ratio'] * 100)
 
-    justification = f"Te asignamos este perfil porque, según tus últimos 60 días, tu tasa de ahorro es de aprox. **{savings_rate_pct}%** y el **{discretionary_ratio_pct}%** de tus gastos se destina a categorías discrecionales (ocio, compras, etc.)."
+    justification = f"Te asignamos este perfil porque tu tasa de ahorro es de aprox. {savings_rate_pct}% y destinas un {discretionary_ratio_pct}% a gastos no esenciales."
     
     if profile_name == "El Guardián del Futuro":
-        justification = f"¡Felicidades! Te identificamos como un Guardián porque tienes una excelente tasa de ahorro (aprox. **{savings_rate_pct}%**) y mantienes tus gastos discrecionales muy bajos (aprox. **{discretionary_ratio_pct}%**)."
+        justification = f"¡Felicidades! Eres un Guardián por tu excelente ahorro ({savings_rate_pct}%) y tu control estricto sobre gastos innecesarios."
+    
     elif profile_name == "El Urbanita Social":
-        justification = f"Te identificamos como un Urbanita Social porque tu tasa de ahorro es baja (aprox. **{savings_rate_pct}%**) y una gran parte de tus gastos se va a categorías discrecionales (aprox. **{discretionary_ratio_pct}%**)."
+        justification = f"Eres un Urbanita porque priorizas las experiencias sociales. Tu gasto discrecional ({discretionary_ratio_pct}%) es alto, ¡ojo con el fondo de emergencia!"
+    
+    elif profile_name == "El Arquitecto Financiero":
+        justification = f"Eres un Arquitecto porque mantienes un equilibrio perfecto. Tu ahorro del {savings_rate_pct}% muestra que planeas a largo plazo con maestría."
+    
+    elif profile_name == "El Coleccionista de Experiencias":
+        justification = f"Eres un Coleccionista porque prefieres invertir en momentos actuales. Tu tasa de ahorro es moderada ({savings_rate_pct}%), pero tu flujo de gastos es constante."
+    
+    elif profile_name == "El Explorador Financiero":
+        justification = f"Eres un Explorador porque estás descubriendo tu camino. Con un ahorro del {savings_rate_pct}%, es el momento ideal para definir metas claras."
 
     return schemas.ProfileResponse(
         profile=profile_name,

@@ -132,6 +132,10 @@ class ProfileResponse(BaseModel):
     profile: str
     justification: str
     recommendation: str
+    # --- CAMPOS NUEVOS PARA LA BARRA DE PROGRESO ---
+    is_calculating: bool = False
+    current_count: int = 0
+    goal: int = 15
 
 # =============================================================================
 # ESQUEMA DE TOKEN DE AUTENTICACIÓN
