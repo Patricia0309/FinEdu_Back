@@ -1,7 +1,7 @@
 # backend/routers/budgets.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
 import schemas, crud, models
 from database import get_db
@@ -58,17 +58,14 @@ def read_specific_income_period(
         )
     return db_period
 
-@router.get("/status", response_model=schemas.BudgetStatus)
+@router.get("/status", response_model=Optional[schemas.BudgetStatus])
 def get_budget_status(
     db: Session = Depends(get_db),
     current_student: models.Student = Depends(get_current_student)
 ):
     budget_status = crud.get_current_budget_status(db=db, student_id=current_student.id)
     if not budget_status:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No tienes un período de presupuesto activo."
-        )
+        return None
     return budget_status
 
 # --- ENDPOINT DE HISTORIAL (VERSIÓN CORRECTA) ---
