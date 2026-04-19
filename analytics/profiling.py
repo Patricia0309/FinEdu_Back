@@ -17,12 +17,13 @@ ESSENTIAL_CATEGORIES = {
     "Deudas y Obligaciones", "Alimentación", "Transporte"
 }
 
+# Reemplaza tu PROFILE_MAP por este:
 PROFILE_MAP = {
-    0: {"profile": "El Urbanita Social", "recommendation": "Enfócate en crear tu primer fondo de emergencia..."},
-    1: {"profile": "El Guardián del Futuro", "recommendation": "¡Felicidades por tu increíble disciplina!..."},
-    2: {"profile": "El Arquitecto Financiero", "recommendation": "Has dominado las bases del juego financiero..."},
-    3.0: {"profile": "El Coleccionista de Experiencias", "recommendation": "Nos encanta que inviertas en ti..."},
-    4.0: {"profile": "El Explorador Financiero", "recommendation": "¡Bienvenido a tu viaje financiero!..."},
+    1: {"profile": "El Guardián del Futuro", "recommendation": "¡Felicidades por tu increíble disciplina! Sigue así."},
+    2: {"profile": "El Arquitecto Financiero", "recommendation": "Has dominado las bases. Es momento de diversificar."},
+    3: {"profile": "El Urbanita Social", "recommendation": "Enfócate en crear tu primer fondo de emergencia."},
+    4: {"profile": "El Coleccionista de Experiencias", "recommendation": "Nos encanta que inviertas en ti, pero no olvides el ahorro."},
+    5: {"profile": "El Explorador Financiero", "recommendation": "¡Bienvenido! Estás dando los primeros pasos en tu viaje."},
 }
 
 PROFILE_TO_TAG_MAP = {
@@ -69,28 +70,45 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
 def train_and_cluster_students(db: Session):
     students = db.query(models.Student).all()
     feature_list = []
+    
     for student in students:
         features = get_student_features(db, student_id=student.id)
         if features:
             features["student_id"] = student.id
             feature_list.append(features)
-    if len(feature_list) < 5: # Necesitamos al menos 5 usuarios con datos
+            
+    # Necesitamos una masa crítica para comparar
+    if len(feature_list) < 5: 
         return None
     
     df = pd.DataFrame(feature_list)
-    df_features = df.drop(columns=["student_id"])
+    # Seleccionamos solo las columnas numéricas para el ML
+    df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
     
+    # Escalado de datos
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
     
-    n_clusters = min(5, len(df_features)) # No podemos tener más clusters que usuarios
-    if n_clusters < 2: return None # K-Means necesita al menos 2 clusters (o 1, pero es inútil)
-        
+    # Ejecutar K-Means
+    n_clusters = min(5, len(df_features))
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
     df['cluster'] = kmeans.fit_predict(scaled_features)
     
-    df['profile_name'] = df['cluster'].map(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[4])['profile'])
-    df['profile_desc'] = df['cluster'].map(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[4])['recommendation'])
+    # --- 🏆 LÓGICA DE RANKING DETERMINÍSTICO ---
+    # Calculamos el ahorro promedio de cada clúster
+    cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
+    
+    # Creamos un ranking: El clúster que más ahorra es el Rango 1, el segundo el Rango 2...
+    # index[0] es el clúster con más ahorro
+    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
+    
+    # Aplicamos el ranking al DataFrame
+    df['profile_id'] = df['cluster'].map(rank_map)
+    
+    # Asignamos nombre y descripción basados en el RANGO, no en el número de clúster aleatorio
+    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
+    df['profile_desc'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['recommendation'])
+    
     return df
 
 # --- LÓGICA APRIORI ---

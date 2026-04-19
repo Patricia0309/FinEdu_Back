@@ -1,4 +1,5 @@
 # backend/crud.py
+from colorama import init
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import models
@@ -120,9 +121,12 @@ def get_microcontent(db: Session, tags: Optional[str] = None, skip: int = 0, lim
     return query.offset(skip).limit(limit).all()
 
 def create_student_transaction(db: Session, transaction: schemas.TransactionCreate, student_id: int):
+    transaction_data = transaction.model_dump()
+    if transaction_data.get("ts") is None:
+        transaction_data["ts"] = datetime.now(timezone.utc)
     # Asumimos que el frontend envía 'income_period_id'
     db_transaction = models.Transaction(
-        **transaction.model_dump(), 
+        **transaction_data, 
         student_id=student_id
     )
     db.add(db_transaction)
@@ -134,32 +138,45 @@ def get_student_transactions(db: Session, student_id: int, skip: int = 0, limit:
     return db.query(models.Transaction).filter(models.Transaction.student_id == student_id).order_by(models.Transaction.ts.desc()).offset(skip).limit(limit).all()
 
 def create_income_period(db: Session, student_id: int, period: schemas.IncomePeriodCreate):
-    """
-    Crea un nuevo período de presupuesto y calcula si debe estar activo.
-    Si está activo, desactiva los demás.
-    """
-    
-    # 1. Calcular el estado 'is_active' basado en las fechas
+    # 🚀 NORMALIZACIÓN TOTAL (Día completo)
+    # Ponemos el inicio a las 00:00:00 y el fin a las 23:59:59
+    clean_start = period.start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    clean_end = period.end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    # 🛡️ PASO 1: Buscar si hay choque de fechas (Overlap)
+    overlapping_budget = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.start_date <= clean_end,
+        models.IncomePeriod.end_date >= clean_start
+    ).first()
+
+    if overlapping_budget:
+        return "overlap" 
+
+    # 🛡️ PASO 2: Calcular si este periodo debe estar activo (USANDO LAS LIMPIAS)
     now = datetime.now(timezone.utc)
     
-    # Asegurarnos de que las fechas del input tengan timezone (asumimos UTC si no)
-    start_date_aware = period.start_date.replace(tzinfo=timezone.utc) if period.start_date.tzinfo is None else period.start_date
-    end_date_aware = period.end_date.replace(tzinfo=timezone.utc) if period.end_date.tzinfo is None else period.end_date
+    # Aseguramos que las fechas limpias tengan zona horaria para comparar con 'now'
+    start_aware = clean_start.replace(tzinfo=timezone.utc) if clean_start.tzinfo is None else clean_start
+    end_aware = clean_end.replace(tzinfo=timezone.utc) if clean_end.tzinfo is None else clean_end
 
-    is_now_active = (start_date_aware <= now) and (now <= end_date_aware)
+    # Ahora sí, si hoy es el día de inicio, se activa desde el primer segundo
+    is_now_active = (start_aware <= now) and (now <= end_aware)
 
-    # 2. Si este nuevo período está activo, desactivamos los demás
+    # 🛡️ PASO 3: Si va a estar activo, desactivar cualquier otro que ande por ahí
     if is_now_active:
         db.query(models.IncomePeriod).filter(
             models.IncomePeriod.student_id == student_id,
             models.IncomePeriod.is_active == True
         ).update({"is_active": False})
-    
-    # 3. Crear el objeto de la base de datos
+
+    # 🛡️ PASO 4: Guardar con las fechas estiradas a día completo
     db_period = models.IncomePeriod(
-        **period.model_dump(),
+        total_income=period.total_income,
+        start_date=clean_start, 
+        end_date=clean_end,     
         student_id=student_id,
-        is_active=is_now_active # <-- Usamos el valor calculado
+        is_active=is_now_active
     )
     db.add(db_period)
     db.commit()
@@ -167,10 +184,24 @@ def create_income_period(db: Session, student_id: int, period: schemas.IncomePer
     return db_period
 
 def get_current_budget_status(db: Session, student_id: int):
+    now = datetime.now(timezone.utc)
     active_period = db.query(models.IncomePeriod).filter(
         models.IncomePeriod.student_id == student_id,
-        models.IncomePeriod.is_active == True
+        models.IncomePeriod.start_date <= now,
+        models.IncomePeriod.end_date >= now
     ).first()
+
+    if active_period and not active_period.is_active:
+        # Desactivamos cualquier otro por seguridad
+        db.query(models.IncomePeriod).filter(
+            models.IncomePeriod.student_id == student_id,
+            models.IncomePeriod.is_active == True
+        ).update({"is_active": False})
+        
+        # Activamos el actual
+        active_period.is_active = True
+        db.commit()
+        db.refresh(active_period)
 
     if not active_period:
         return None 
@@ -210,32 +241,90 @@ def get_income_period_by_id(db: Session, period_id: int, student_id: int):
         models.IncomePeriod.student_id == student_id
     ).first()
 
+def realign_student_transactions(db: Session, student_id: int):
+    # 1. Traemos todo
+    periods = db.query(models.IncomePeriod).filter(models.IncomePeriod.student_id == student_id).all()
+    transactions = db.query(models.Transaction).filter(models.Transaction.student_id == student_id).all()
+
+    count = 0
+    for t in transactions:
+        # Aseguramos que la fecha de la transacción sea "consciente" (aware) de UTC
+        t_ts = t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=timezone.utc)
+        
+        for p in periods:
+            # 🚀 EL TRUCO: Convertimos las fechas del periodo a UTC para comparar
+            p_start = p.start_date.replace(tzinfo=timezone.utc) if p.start_date.tzinfo is None else p.start_date
+            p_end = p.end_date.replace(tzinfo=timezone.utc) if p.end_date.tzinfo is None else p.end_date
+
+            if p_start <= t_ts <= p_end:
+                if t.income_period_id != p.income_period_id:
+                    t.income_period_id = p.income_period_id
+                    count += 1
+                break 
+    
+    db.commit()
+    return count
+
 def update_income_period(db: Session, period_id: int, student_id: int, period_update: schemas.IncomePeriodCreate):
+    # 🛡️ 1. Buscar el periodo
     db_period = db.query(models.IncomePeriod).filter(
-        models.IncomePeriod.income_period_id == period_id, # Nombre de ID corregido
+        models.IncomePeriod.income_period_id == period_id,
         models.IncomePeriod.student_id == student_id
     ).first()
 
     if not db_period:
         return None
 
-    # CORRECCIÓN DE NOMBRE:
-    db_period.total_income = period_update.total_income
-    db_period.start_date = period_update.start_date
-    db_period.end_date = period_update.end_date
+    # 🛡️ 2. Normalizar fechas (Día completo)
+    clean_start = period_update.start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    clean_end = period_update.end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    db.commit()
+    # 🛡️ 3. Revisar Overlap (Ignorando el periodo actual)
+    overlapping = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.income_period_id != period_id,
+        models.IncomePeriod.start_date <= clean_end,
+        models.IncomePeriod.end_date >= clean_start
+    ).first()
+
+    if overlapping:
+        return "overlap"
+
+    # 🛡️ 4. Actualizar datos básicos
+    db_period.total_income = period_update.total_income
+    db_period.start_date = clean_start
+    db_period.end_date = clean_end
+    
+    # Recalcular is_active
+    now = datetime.now(timezone.utc)
+    start_aware = clean_start.replace(tzinfo=timezone.utc) if clean_start.tzinfo is None else clean_start
+    end_aware = clean_end.replace(tzinfo=timezone.utc) if clean_end.tzinfo is None else clean_end
+    db_period.is_active = (start_aware <= now <= end_aware)
+
+    db.commit() # Guardamos los cambios de fecha primero
+
+    # 🚀 5. EL TOQUE MAESTRO: Re-alinear transacciones
+    # Ahora que las fechas cambiaron, movemos los gastos a donde pertenecen
+    realign_student_transactions(db, student_id=student_id)
+
     db.refresh(db_period)
     return db_period
 
-def get_budget_history(db: Session, student_id: int, days_history: int = 60):
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=days_history)
-    history = db.query(models.IncomePeriod).filter(
-        models.IncomePeriod.student_id == student_id,
-        models.IncomePeriod.end_date <= end_date
+# def get_budget_history(db: Session, student_id: int, days_history: int = 60):
+#     end_date = datetime.now(timezone.utc)
+#     start_date = end_date - timedelta(days=days_history)
+#     history = db.query(models.IncomePeriod).filter(
+#         models.IncomePeriod.student_id == student_id,
+#         models.IncomePeriod.end_date <= end_date
+#     ).order_by(models.IncomePeriod.start_date.desc()).all()
+#     return history
+
+def get_budget_history(db: Session, student_id: int):
+    # 🚀 Quitamos los filtros de fecha para que veas TODO lo que hay en la BD
+    # así podrás detectar qué presupuestos están chocando.
+    return db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id
     ).order_by(models.IncomePeriod.start_date.desc()).all()
-    return history
 
 def get_association_rules(db: Session, skip: int = 0, limit: int = 20):
     return db.query(models.AssociationRule).order_by(
@@ -278,6 +367,32 @@ def get_triggered_rules(db: Session, student_id: int):
             triggered_rules.append(rule)
             
     return triggered_rules
+
+# backend/crud.py
+
+def get_predictive_rule_match(db: Session, category_id: int):
+    """
+    Busca una regla de asociación donde la categoría recién gastada 
+    sea el 'disparador' (antecedente).
+    """
+    # 1. Obtenemos el nombre de la categoría (porque tus reglas usan nombres)
+    category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not category:
+        return None
+
+    # 2. Buscamos todas las reglas
+    # Nota: Filtramos por un 'lift' alto para que la predicción sea de calidad
+    rules = db.query(models.AssociationRule).filter(
+        models.AssociationRule.lift > 1.2 
+    ).all()
+
+    for rule in rules:
+        # 3. ¿La categoría que acaba de usar está en los antecedentes de esta regla?
+        if category.name in rule.antecedents:
+            # Si sí, devolvemos la regla para avisarle sobre los 'consequents'
+            return rule
+            
+    return None
 
 def get_budget_tendency(db: Session, student_id: int):
     """
@@ -346,3 +461,75 @@ def get_budget_tendency(db: Session, student_id: int):
         previous_period=previous_summary,
         comparison=comparison
     )
+
+def get_category_spending_report(db: Session, student_id: int, period_id: int = None): 
+    # 1. Decidimos qué periodo usar
+    if period_id is None:
+        # Si no hay ID, buscamos el que esté activo hoy
+        active_period = db.query(models.IncomePeriod).filter(
+            models.IncomePeriod.student_id == student_id,
+            models.IncomePeriod.is_active == True
+        ).first()
+    else:
+        # Si nos pasaron un ID, buscamos ese específicamente
+        active_period = db.query(models.IncomePeriod).filter(
+            models.IncomePeriod.student_id == student_id,
+            models.IncomePeriod.income_period_id == period_id # 👈 Aquí debe decir period_id
+        ).first()
+
+    # Si después de buscar no encontramos nada, regresamos None
+    if not active_period:
+        return None
+
+    # 2. Calculamos los gastos por categoría (Esto ya lo tenías y funciona bien)
+    from sqlalchemy import func
+    
+    results = db.query(
+        models.Category.name,
+        func.sum(models.Transaction.amount).label("total")
+    ).join(models.Transaction, models.Category.id == models.Transaction.category_id)\
+     .filter(
+        models.Transaction.income_period_id == active_period.income_period_id,
+        models.Transaction.type == 'gasto'
+    ).group_by(models.Category.name).all()
+
+    category_list = []
+    total_budget = float(active_period.total_income)
+
+    for name, spent in results:
+        spent_float = float(spent)
+        # Calculamos el porcentaje respecto al presupuesto total
+        percentage = (spent_float / total_budget) if total_budget > 0 else 0
+        
+        category_list.append(schemas.CategorySpendingDetail(
+            category_name=name,
+            total_spent=spent_float,
+            percentage=round(percentage, 4) # Guardamos el decimal (0.25 = 25%)
+        ))
+
+    return schemas.CategorySpendingResponse(
+        income_period_id=active_period.income_period_id,
+        start_date=active_period.start_date,
+        end_date=active_period.end_date,
+        total_budget=total_budget,
+        categories=category_list
+    )
+
+def delete_income_period(db: Session, student_id: int, period_id: int):
+    # 🕵️ Buscamos el periodo asegurándonos de que pertenezca al estudiante
+    db_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.income_period_id == period_id,
+        models.IncomePeriod.student_id == student_id
+    ).first()
+
+    if db_period:
+        # 🗑️ Al borrar el periodo, SQLAlchemy se encargará de las transacciones 
+        # (siempre y cuando tengas configurado el 'cascade delete' en tus modelos)
+        db.delete(db_period)
+        db.commit()
+        return True
+    
+    return False
+
+
+

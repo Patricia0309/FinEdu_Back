@@ -12,3 +12,6 @@ firebase-admin
 mlxtend
 matplotlib
 seaborn
+apscheduler
+pytz
+colorama

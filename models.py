@@ -3,6 +3,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boo
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
+import datetime
 
 # Tabla de asociación para Categorías Favoritas
 student_favorite_category_association = Table(
@@ -38,7 +39,7 @@ class IncomePeriod(Base):
     student_id = Column(Integer, ForeignKey("student.id"), nullable=False)
 
     owner = relationship("Student", back_populates="income_periods")
-    transactions = relationship("Transaction", back_populates="income_period")
+    transactions = relationship("Transaction", back_populates="income_period", cascade="all, delete-orphan")
 
 class Transaction(Base):
     __tablename__ = "transaction"
@@ -83,3 +84,11 @@ class Microcontent(Base):
     title = Column(String, nullable=False, index=True)
     body = Column(Text, nullable=False) # 'Text' es para texto largo
     tag = Column(String, index=True) # Para filtrar: "ahorro", "deuda", etc.
+
+class PasswordResetCode(Base):
+    __tablename__ = "password_reset_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True)
+    code = Column(String) # Aquí guardaremos los 6 dígitos
+    expires_at = Column(DateTime)

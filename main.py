@@ -1,5 +1,3 @@
-# backend/main.py
-
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from database import engine, SessionLocal
@@ -9,9 +7,17 @@ import models
 import crud
 # Importamos todos tus routers
 from routers import students, auth, transactions, analytics, budgets, content
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- NO INICIALIZAR FIREBASE AQUÍ ---
 # (Hemos movido este bloque al 'lifespan')
+
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from database import get_db # Asegúrate de que esta función esté en tu database.py
+from notifications import send_fcm_notification # La función que creamos
+from tasks import scheduler
+from routers import students, auth, transactions, analytics, budgets, content
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,6 +37,11 @@ async def lifespan(app: FastAPI):
         print(f"Error inicializando Firebase Admin SDK: {e}")
     # --- FIN INICIALIZACIÓN ---
 
+    # INICIAR EL SCHEDULER (RECORDATORIOS)
+    if not scheduler.running:
+        scheduler.start()
+        print("⏰ Scheduler de recordatorios nocturnos iniciado.")
+
     # --- SEMBRAR LA BASE DE DATOS ---
     db = SessionLocal()
     try:
@@ -40,6 +51,10 @@ async def lifespan(app: FastAPI):
         db.close()
     
     yield
+
+    if scheduler.running:
+        scheduler.shutdown()
+        print("⏰ Scheduler apagado.")
     
     print("Apagando aplicación...")
 
@@ -51,6 +66,14 @@ app = FastAPI(
     description="La API para el proyecto de tesis FinEdu.",
     version="0.1.0",
     lifespan=lifespan # Se asigna la función de ciclo de vida
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["137.184.85.162"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Incluimos todos los routers

@@ -1,7 +1,7 @@
 # backend/routers/analytics.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import models, schemas, crud
 from database import get_db
 from routers.auth import get_current_student
@@ -148,3 +148,14 @@ def get_spending_tendency(
             detail="No se encontró un período de presupuesto activo. Por favor, crea uno."
         )
     return tendency_data
+
+@router.get("/category-spending", response_model=Optional[schemas.CategorySpendingResponse])
+def get_spending_by_category(
+    db: Session = Depends(get_db),
+    current_student: models.Student = Depends(get_current_student)
+):
+    report = crud.get_category_spending_report(db, student_id=current_student.id)
+    if not report:
+        # Si no hay presupuesto activo, devolvemos null o un error 404
+        return None
+    return report

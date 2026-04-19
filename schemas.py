@@ -1,5 +1,5 @@
 # backend/schemas.py
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Optional, List
 import re  # <-- ¡CORRECCIÓN 1: IMPORTACIÓN AÑADIDA!
@@ -57,6 +57,7 @@ class TransactionBase(BaseModel):
     category_id: Optional[int] = None
 
 class TransactionCreate(TransactionBase):
+    ts: Optional[datetime] = None
     pass # Hereda los campos de TransactionBase
 
 class Transaction(TransactionBase):
@@ -76,6 +77,14 @@ class IncomePeriodCreate(BaseModel):
     total_income: float  # <-- ¡CORRECCIÓN 2: DE 'amount' A 'total_income'!
     start_date: datetime
     end_date: datetime
+
+    @model_validator(mode='after')
+    def check_dates(self) -> 'IncomePeriodCreate':
+        if self.start_date >= self.end_date:
+            raise ValueError("La fecha de inicio debe ser anterior a la fecha de término.")
+        return self
+    
+
 class IncomePeriod(IncomePeriodCreate):
     income_period_id: int
     is_active: bool
@@ -153,3 +162,34 @@ class MicrocontentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Esquema para solicitar la recuperación
+class PasswordRecoveryRequest(BaseModel):
+    email: str
+
+# Esquema para confirmar el cambio con el token
+class PasswordResetConfirmOTP(BaseModel):
+    email: str
+    code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8)
+
+class CategorySpendingDetail(BaseModel):
+    category_name: str
+    total_spent: float
+    percentage: float  # (Gasto en esta categoría / Presupuesto Total) * 100
+    
+class CategorySpendingResponse(BaseModel):
+    income_period_id: int
+    total_budget: float
+    categories: List[CategorySpendingDetail]
+
+
+class BudgetHistoryDetailResponse(BaseModel):
+    income_period_id: int
+    total_income: float
+    total_spent: float
+    remaining_budget: float
+    start_date: datetime
+    end_date: datetime
+    # Lista de cuánto se gastó por categoría en ese entonces
+    categories: List[CategorySpendingDetail]

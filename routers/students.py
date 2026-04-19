@@ -9,6 +9,10 @@ router = APIRouter(prefix="/students", tags=["Students"])
 
 @router.post("/", response_model=schemas.Student, status_code=status.HTTP_201_CREATED)
 def create_student_endpoint(student: schemas.StudentCreate, db: Session = Depends(get_db)):
+    existing_student = crud.get_student_by_email(db, email=student.email)
+    if existing_student:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El email ya está registrado.")
+
     try:
         new_student = crud.create_student(db=db, student=student)
         return new_student
