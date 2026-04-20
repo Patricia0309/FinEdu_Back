@@ -1,20 +1,13 @@
-# backend/email_utils.py
-import smtplib
-from email.message import EmailMessage
+import os
+import requests
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
-SENDER_EMAIL = "dev.finedu@gmail.com" 
-SENDER_PASSWORD = "kpuplxdvonavmwgm" 
 
 def send_otp_email(target_email: str, otp_code: str):
-    msg = EmailMessage()
-    msg["Subject"] = "Código de Seguridad FinEdu 🛡️"
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = target_email
-    
-    # Un diseño sencillo para que no se vea como spam
-    content = f"""
+    API_KEY = "BREVO_API_KEY" 
+    URL = "https://api.brevo.com/v3/smtp/email"
+
+    # 🎨 2. El mismo diseño que ya tenías
+    html_content = f"""
     <html>
       <body style="font-family: sans-serif; color: #333;">
         <div style="max-width: 400px; margin: auto; border: 1px solid #eee; padding: 20px;">
@@ -30,13 +23,35 @@ def send_otp_email(target_email: str, otp_code: str):
       </body>
     </html>
     """
-    msg.add_alternative(content, subtype="html")
+
+    # 📦 3. El paquete que enviamos a la API
+    payload = {
+        "sender": {
+            "name": "FinEdu 🛡️", 
+            "email": "dev.finedu@gmail.com" # El correo que registraste en Brevo
+        },
+        "to": [{"email": target_email}],
+        "subject": "Código de Seguridad FinEdu 🛡️",
+        "htmlContent": html_content
+    }
+
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": API_KEY
+    }
 
     try:
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as smtp:
-            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
-            smtp.send_message(msg)
-        return True
+        # ⚡ Usamos puerto 443 (HTTPS), que nunca está bloqueado
+        response = requests.post(URL, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code == 201:
+            print(f"✅ OTP enviado con éxito a {target_email}")
+            return True
+        else:
+            print(f"❌ Error de Brevo ({response.status_code}): {response.text}")
+            return False
+            
     except Exception as e:
-        print(f"❌ ERROR SMTP: {e}")
+        print(f"❌ Error de conexión al enviar OTP: {e}")
         return False
