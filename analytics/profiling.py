@@ -71,19 +71,20 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
 
 def train_and_cluster_students(db: Session):
     students = db.query(models.Student).all()
-    feature_list = []
+    print(f"\n[DEBUG] Total estudiantes encontrados en BD: {len(students)}")
     
-    # --- 1. EXTRACCIÓN Y VALIDACIÓN ---
+    feature_list = []
     for student in students:
+        # Aquí asumo que get_student_features ya está definida en tu código
         features = get_student_features(db, student_id=student.id)
         
         if not features:
             continue
         
-        # Validación crítica: evitar divisiones inválidas
+        # Validación: Evitar usuarios con ingresos cero o negativos que rompen las tasas
         if features.get("income", 0) <= 0:
             continue
-        
+            
         feature_list.append({
             "student_id": student.id,
             "savings_rate": features["savings_rate"],
@@ -91,68 +92,61 @@ def train_and_cluster_students(db: Session):
             "avg_expense_amount": features["avg_expense_amount"]
         })
     
-    if len(feature_list) < 10:
+    print(f"[DEBUG] Estudiantes con datos válidos (Ingreso > 0): {len(feature_list)}")
+
+    if len(feature_list) < 3: 
+        print("[ERROR] Datos insuficientes para agrupar (mínimo 3).")
         return None
     
     df = pd.DataFrame(feature_list)
 
-    # --- 2. LIMPIEZA DE OUTLIERS (EN TODAS LAS VARIABLES) ---
+    # --- LIMPIEZA DE OUTLIERS POR PERCENTILES ---
     cols = ["savings_rate", "discretionary_ratio", "avg_expense_amount"]
-    
     for col in cols:
         q_low = df[col].quantile(0.01)
         q_high = df[col].quantile(0.99)
         df = df[(df[col] >= q_low) & (df[col] <= q_high)]
     
-    if len(df) < 5:
-        return None
+    print(f"[DEBUG] Estudiantes después de limpiar outliers: {len(df)}")
 
-    # --- 3. SELECCIÓN DE FEATURES ---
-    # 🔁 PRUEBA A/B: comenta una u otra
+    # --- SELECCIÓN DE VARIABLES ---
+    # Usamos solo 2 para una gráfica más clara en la tesis
     df_features = df[["savings_rate", "discretionary_ratio"]]
-    # df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
-
-    # --- 4. ESCALADO ---
+    
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
 
-    # --- 5. BÚSQUEDA DEL MEJOR K ---
+    # --- BÚSQUEDA AUTOMÁTICA DEL MEJOR K ---
     best_k = 2
     best_score = -1
-
     max_k = min(5, len(df) - 1)
 
     for k in range(2, max_k + 1):
         kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
         labels = kmeans.fit_predict(scaled_features)
         
-        # Evita casos inválidos (clusters de 1 elemento)
-        if len(set(labels)) < 2:
-            continue
+        if len(set(labels)) < 2: continue
         
         score = silhouette_score(scaled_features, labels)
+        print(f"[DEBUG] Probando K={k} | Silhouette Score: {score:.4f}")
 
         if score > best_score:
             best_score = score
             best_k = k
 
-    # --- 6. MODELO FINAL ---
+    print(f"[SUCCESS] Mejor K seleccionado: {best_k} con score {best_score:.4f}")
+
+    # --- MODELO FINAL ---
     final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
     df['cluster'] = final_kmeans.fit_predict(scaled_features)
     df['global_silhouette'] = best_score
 
-    # --- 7. ORDENAMIENTO DE PERFILES ---
+    # ORDENAMIENTO (De mayor a menor ahorro)
     cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
-    
-    rank_map = {
-        cluster_id: rank + 1
-        for rank, cluster_id in enumerate(cluster_savings.index)
-    }
+    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
 
     df['profile_id'] = df['cluster'].map(rank_map)
-    df['profile_name'] = df['profile_id'].apply(
-        lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile']
-    )
+    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
 
     return df
 
