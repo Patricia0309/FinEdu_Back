@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+import numpy as np
 import models
 import schemas
 import crud # crud SÍ se necesita para create_student y get_association_rules
@@ -68,46 +70,54 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
     }
 
 def train_and_cluster_students(db: Session):
-    students = db.query(models.Student).all()
+    students = db.query(models.Student).all()[cite: 1]
     feature_list = []
     
     for student in students:
-        features = get_student_features(db, student_id=student.id)
+        features = get_student_features(db, student_id=student.id)[cite: 1]
         if features:
             features["student_id"] = student.id
             feature_list.append(features)
             
-    # Necesitamos una masa crítica para comparar
-    if len(feature_list) < 5: 
+    if len(feature_list) < 10: # Aumentamos el mínimo para estabilidad estadística
         return None
     
     df = pd.DataFrame(feature_list)
-    # Seleccionamos solo las columnas numéricas para el ML
+
+    # --- MEJORA 1: FILTRADO ESTADÍSTICO (OUTLIERS) ---
+    # Usamos percentiles para eliminar el 1% de ruido extremo
+    q_low = df['savings_rate'].quantile(0.01)
+    q_high = df['savings_rate'].quantile(0.99)
+    df = df[(df['savings_rate'] >= q_low) & (df['savings_rate'] <= q_high)]
+
     df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
+    scaler = StandardScaler()[cite: 1]
+    scaled_features = scaler.fit_transform(df_features)[cite: 1]
     
-    # Escalado de datos
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(df_features)
+    # --- MEJORA 2: SELECCIÓN DINÁMICA DE K (SILHOUETTE) ---
+    best_k = 2
+    best_score = -1
     
-    # Ejecutar K-Means
-    n_clusters = min(5, len(df_features))
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
-    df['cluster'] = kmeans.fit_predict(scaled_features)
+    # Probamos de 2 a 5 clusters para encontrar la separación óptima
+    for k in range(2, min(6, len(df))):
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')[cite: 1]
+        labels = kmeans.fit_predict(scaled_features)
+        score = silhouette_score(scaled_features, labels)
+        
+        if score > best_score:
+            best_score = score
+            best_k = k
+
+    # Entrenamos el modelo final con el mejor K encontrado
+    final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
+    df['cluster'] = final_kmeans.fit_predict(scaled_features)
+    df['global_silhouette'] = best_score
     
-    # --- 🏆 LÓGICA DE RANKING DETERMINÍSTICO ---
-    # Calculamos el ahorro promedio de cada clúster
-    cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
-    
-    # Creamos un ranking: El clúster que más ahorra es el Rango 1, el segundo el Rango 2...
-    # index[0] es el clúster con más ahorro
-    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
-    
-    # Aplicamos el ranking al DataFrame
-    df['profile_id'] = df['cluster'].map(rank_map)
-    
-    # Asignamos nombre y descripción basados en el RANGO, no en el número de clúster aleatorio
-    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
-    df['profile_desc'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['recommendation'])
+    # --- RANKING Y PERFILES ---
+    cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)[cite: 1]
+    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}[cite: 1]
+    df['profile_id'] = df['cluster'].map(rank_map)[cite: 1]
+    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])[cite: 1]
     
     return df
 

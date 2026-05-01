@@ -1,52 +1,50 @@
-# FinEdu_Back/graficar_tesis.py
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
-from database import SessionLocal
-from analytics.profiling import train_and_cluster_students
 
-def generar_grafica_clusters():
-    # 1. Conexión a la BD
-    db = SessionLocal()
-    print("LOG: Extrayendo datos de la base de datos...")
-    
-    # 2. Llamamos a tu lógica de K-Means
-    df = train_and_cluster_students(db)
-    db.close()
+def generar_grafica_tesis_pro():
+    db = SessionLocal()[cite: 3]
+    df = train_and_cluster_students(db)[cite: 1]
+    db.close()[cite: 3]
 
     if df is not None and not df.empty:
-        print(f"LOG: Graficando {len(df)} usuarios encontrados...")
+        plt.figure(figsize=(14, 8))
+        sns.set_style("whitegrid")
         
-        # 3. Configuración visual
-        plt.figure(figsize=(10, 6))
-        sns.set_context("talk")
-        
-        # Creamos el Scatter Plot
-        # Eje X: Tasa de ahorro | Eje Y: Gasto discrecional
+        # Conteo de usuarios por cluster para la leyenda
+        counts = df['profile_name'].value_counts()
+        df['legend_label'] = df['profile_name'].apply(lambda x: f"{x} (n={counts[x]})")
+
+        # Scatter Plot principal
         scatter = sns.scatterplot(
-            data=df,
-            x='savings_rate',
-            y='discretionary_ratio',
-            hue='profile_name',
-            palette='deep',
-            s=150,
-            edgecolor='black',
-            alpha=0.7
+            data=df, x='savings_rate', y='discretionary_ratio',
+            hue='legend_label', style='legend_label',
+            s=200, alpha=0.6, edgecolor='black', palette='viridis'
         )
 
-        # 4. Etiquetas profesionales para la tesis
-        plt.title('Visualización de Perfiles Financieros (K-Means)', pad=20)
-        plt.xlabel('Tasa de Ahorro (Income vs Expense)')
-        plt.ylabel('Proporción de Gasto Discrecional')
-        plt.legend(title='Clusters Identificados', bbox_to_anchor=(1, 1))
-        
-        # 5. Guardar el archivo
-        nombre_archivo = "resultado_clusters_tesis.png"
-        plt.savefig(nombre_archivo, bbox_inches='tight', dpi=300)
-        print(f"✅ ¡ÉXITO! Tu gráfica se guardó como: {nombre_archivo}")
-        plt.show()
-    else:
-        print("❌ ERROR: No hay suficientes usuarios (mínimo 5) para generar clusters.")
+        # --- CENTROIDES CON ETIQUETAS ---
+        centroids = df.groupby('profile_name')[['savings_rate', 'discretionary_ratio']].mean()
+        plt.scatter(
+            centroids['savings_rate'], centroids['discretionary_ratio'],
+            marker='X', s=500, color='red', label='Centroides (Núcleo)',
+            edgecolor='white', linewidth=2, zorder=10
+        )
 
-if __name__ == "__main__":
-    generar_grafica_clusters()
+        # Añadir texto a cada centroide para identificar el perfil
+        for name, row in centroids.iterrows():
+            plt.text(
+                row['savings_rate'], row['discretionary_ratio'] + 0.02, 
+                name, fontsize=10, fontweight='bold', ha='center',
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none')
+            )
+
+        # Información estadística en la gráfica
+        score = df['global_silhouette'].iloc[0]
+        plt.title(f'Segmentación de Comportamiento Financiero\n(Optimización K-Means | Silhouette: {score:.2f})', 
+                  fontsize=16, pad=20, fontweight='bold')
+        
+        plt.xlabel('Tasa de Ahorro (Balance Neto / Ingresos Totales)', fontsize=12)
+        plt.ylabel('Proporción de Gasto Discrecional', fontsize=12)
+        plt.legend(title='Clusters y Población', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        plt.savefig("resultado_clusters_tesis_VALIDADO.png", dpi=300, bbox_inches='tight')[cite: 1]
+        print(f"✅ Gráfica generada con K={df['profile_id'].max()} y score {score:.2f}")
