@@ -2,6 +2,7 @@
 import pandas as pd
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from sqlalchemy.orm import Session
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
@@ -69,61 +70,63 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
         "avg_expense_amount": float(total_expense / len([t for t in transactions if t.type == 'gasto'])) if any(t.type == 'gasto' for t in transactions) else 0.0
     }
 
+def get_features_for_clustering(db: Session, student_id: int):
+    """Calcula las métricas de un estudiante directamente desde la BD."""
+    # Buscamos transacciones del estudiante
+    expenses = db.query(models.Expense).filter(models.Expense.student_id == student_id).all()
+    # Buscamos el ingreso registrado (ajusta según tu modelo de Student o Income)
+    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    
+    income = float(student.income) if student and student.income else 0
+    if income <= 0: return None # No podemos calcular tasas si no hay ingreso
+
+    total_spent = sum(float(e.amount) for e in expenses)
+    discretionary_spent = sum(float(e.amount) for e in expenses if e.category in ["Diversión", "Salidas", "Streaming"]) # Ajusta tus categorías
+
+    return {
+        "savings_rate": (income - total_spent) / income,
+        "discretionary_ratio": discretionary_spent / total_spent if total_spent > 0 else 0,
+        "avg_expense_amount": total_spent / len(expenses) if len(expenses) > 0 else 0
+    }
+
+
 def train_and_cluster_students(db: Session):
+    print("[DEBUG] Iniciando procesamiento...")
     students = db.query(models.Student).all()
+    
     feature_list = []
-    
     for student in students:
-        features = get_student_features(db, student_id=student.id)
-        if not features or features.get("income", 0) <= 0:
-            continue
-            
-        feature_list.append({
-            "student_id": student.id,
-            "savings_rate": features["savings_rate"],
-            "discretionary_ratio": features["discretionary_ratio"]
-        })
+        # Usamos la función que acabamos de definir arriba
+        features = get_features_for_clustering(db, student_id=student.id)
+        if features:
+            features["student_id"] = student.id
+            feature_list.append(features)
     
-    if len(feature_list) < 5: 
-        return None
-    
+    print(f"[DEBUG] Estudiantes con datos: {len(feature_list)}")
+    if len(feature_list) < 3: return None
+
     df = pd.DataFrame(feature_list)
 
-    # --- PASO CLAVE: FILTRO MANUAL DE "SENTIDO COMÚN" ---
-    # Esto elimina al usuario de -650 y "hace zoom" en los normales
+    # FILTRO DE SEGURIDAD (Zoom para que la gráfica no se vea aplastada)
     df = df[(df['savings_rate'] >= -1.0) & (df['savings_rate'] <= 1.0)]
     
-    if len(df) < 5: return None
+    if len(df) < 3: 
+        print("[DEBUG] Muy pocos datos tras el filtro de -1 a 1.")
+        return None
 
     df_features = df[["savings_rate", "discretionary_ratio"]]
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
 
-    # --- OPTIMIZACIÓN FORZADA (K entre 3 y 5) ---
-    # Forzamos al menos 3 clusters para que tu tesis se vea completa
-    best_k = 3
-    best_score = -1
-    max_possible_k = min(5, len(df) - 1)
+    # Forzamos K=3 para que salgan colores y nombres diferentes
+    kmeans = KMeans(n_clusters=3, random_state=42, n_init='auto')
+    df['cluster'] = kmeans.fit_predict(scaled_features)
+    df['global_silhouette'] = silhouette_score(scaled_features, df['cluster'])
 
-    for k in range(3, max_possible_k + 1):
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
-        labels = kmeans.fit_predict(scaled_features)
-        score = silhouette_score(scaled_features, labels)
-        
-        if score > best_score:
-            best_score = score
-            best_k = k
-
-    final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
-    df['cluster'] = final_kmeans.fit_predict(scaled_features)
-    df['global_silhouette'] = best_score
-
-    # Ordenamiento por ahorro para asignar nombres
+    # Ranking por ahorro
     cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
-    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
-
-    df['profile_id'] = df['cluster'].map(rank_map)
-    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
+    rank_map = {c_id: rank + 1 for rank, c_id in enumerate(cluster_savings.index)}
+    df['profile_name'] = df['cluster'].map(rank_map).apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
 
     return df
 
