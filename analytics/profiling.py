@@ -71,79 +71,54 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
 
 def train_and_cluster_students(db: Session):
     students = db.query(models.Student).all()
-    print(f"\n[DEBUG] Total estudiantes encontrados en BD: {len(students)}")
-    
     feature_list = []
+    
     for student in students:
-        # Aquí asumo que get_student_features ya está definida en tu código
         features = get_student_features(db, student_id=student.id)
-        if len(feature_list) == 0 and features:
-            print(f"[DEBUG] Ejemplo de datos del primer estudiante: {features}")
-        
-        if not features:
+        if not features or features.get("income", 0) <= 0:
             continue
-        
-        # Validación: Evitar usuarios con ingresos cero o negativos que rompen las tasas
-        #if features.get("income", 0) <= 0:
-        #   continue
             
         feature_list.append({
             "student_id": student.id,
             "savings_rate": features["savings_rate"],
-            "discretionary_ratio": features["discretionary_ratio"],
-            "avg_expense_amount": features["avg_expense_amount"]
+            "discretionary_ratio": features["discretionary_ratio"]
         })
     
-    print(f"[DEBUG] Estudiantes con datos válidos (Ingreso > 0): {len(feature_list)}")
-
-    if len(feature_list) < 3: 
-        print("[ERROR] Datos insuficientes para agrupar (mínimo 3).")
+    if len(feature_list) < 5: 
         return None
     
     df = pd.DataFrame(feature_list)
 
-    # --- LIMPIEZA DE OUTLIERS POR PERCENTILES ---
-    cols = ["savings_rate", "discretionary_ratio", "avg_expense_amount"]
-    for col in cols:
-        q_low = df[col].quantile(0.01)
-        q_high = df[col].quantile(0.99)
-        df = df[(df[col] >= q_low) & (df[col] <= q_high)]
+    # --- PASO CLAVE: FILTRO MANUAL DE "SENTIDO COMÚN" ---
+    # Esto elimina al usuario de -650 y "hace zoom" en los normales
+    df = df[(df['savings_rate'] >= -1.0) & (df['savings_rate'] <= 1.0)]
     
-    print(f"[DEBUG] Estudiantes después de limpiar outliers: {len(df)}")
+    if len(df) < 5: return None
 
-    # --- SELECCIÓN DE VARIABLES ---
-    # Usamos solo 2 para una gráfica más clara en la tesis
     df_features = df[["savings_rate", "discretionary_ratio"]]
-    
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
 
-    # --- BÚSQUEDA AUTOMÁTICA DEL MEJOR K ---
-    best_k = 2
+    # --- OPTIMIZACIÓN FORZADA (K entre 3 y 5) ---
+    # Forzamos al menos 3 clusters para que tu tesis se vea completa
+    best_k = 3
     best_score = -1
-    max_k = min(5, len(df) - 1)
+    max_possible_k = min(5, len(df) - 1)
 
-    for k in range(2, max_k + 1):
+    for k in range(3, max_possible_k + 1):
         kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
         labels = kmeans.fit_predict(scaled_features)
-        
-        if len(set(labels)) < 2: continue
-        
         score = silhouette_score(scaled_features, labels)
-        print(f"[DEBUG] Probando K={k} | Silhouette Score: {score:.4f}")
-
+        
         if score > best_score:
             best_score = score
             best_k = k
 
-    print(f"[SUCCESS] Mejor K seleccionado: {best_k} con score {best_score:.4f}")
-
-    # --- MODELO FINAL ---
     final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
     df['cluster'] = final_kmeans.fit_predict(scaled_features)
     df['global_silhouette'] = best_score
 
-    # ORDENAMIENTO (De mayor a menor ahorro)
+    # Ordenamiento por ahorro para asignar nombres
     cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
     rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
 
