@@ -71,54 +71,64 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
     }
 
 def get_features_for_clustering(db: Session, student_id: int):
-    """Calcula las métricas de un estudiante directamente desde la BD."""
-    # Buscamos transacciones del estudiante
-    expenses = db.query(models.Expense).filter(models.Expense.student_id == student_id).all()
-    # Buscamos el ingreso registrado (ajusta según tu modelo de Student o Income)
-    student = db.query(models.Student).filter(models.Student.id == student_id).first()
+    # Buscamos el periodo de ingreso activo del estudiante
+    income_period = db.query(models.IncomePeriod).filter(
+        models.IncomePeriod.student_id == student_id,
+        models.IncomePeriod.is_active == True
+    ).first()
     
-    income = float(student.income) if student and student.income else 0
-    if income <= 0: return None # No podemos calcular tasas si no hay ingreso
+    income = float(income_period.total_income) if income_period else 0
+    if income <= 0: return None
 
-    total_spent = sum(float(e.amount) for e in expenses)
-    discretionary_spent = sum(float(e.amount) for e in expenses if e.category in ["Diversión", "Salidas", "Streaming"]) # Ajusta tus categorías
+    # Buscamos transacciones (Tú las llamaste Transaction, no Expense)
+    transactions = db.query(models.Transaction).filter(
+        models.Transaction.student_id == student_id
+    ).all()
+    
+    if not transactions: return None
+
+    total_spent = sum(float(t.amount) for t in transactions)
+    
+    # Calculamos gasto discrecional (ajustado a tus categorías probables)
+    # Si tus categorías tienen IDs, podrías usar IDs aquí
+    discretionary_spent = sum(float(t.amount) for t in transactions if t.category_id in [2, 3, 4]) 
 
     return {
         "savings_rate": (income - total_spent) / income,
         "discretionary_ratio": discretionary_spent / total_spent if total_spent > 0 else 0,
-        "avg_expense_amount": total_spent / len(expenses) if len(expenses) > 0 else 0
+        "avg_expense_amount": total_spent / len(transactions) if len(transactions) > 0 else 0
     }
 
-
 def train_and_cluster_students(db: Session):
-    print("[DEBUG] Iniciando procesamiento...")
+    print("[DEBUG] Iniciando procesamiento con tablas Transaction e IncomePeriod...")
     students = db.query(models.Student).all()
     
     feature_list = []
     for student in students:
-        # Usamos la función que acabamos de definir arriba
         features = get_features_for_clustering(db, student_id=student.id)
         if features:
             features["student_id"] = student.id
             feature_list.append(features)
     
-    print(f"[DEBUG] Estudiantes con datos: {len(feature_list)}")
-    if len(feature_list) < 3: return None
+    print(f"[DEBUG] Estudiantes con datos financieros válidos: {len(feature_list)}")
+    if len(feature_list) < 3: 
+        print("[DEBUG] ERROR: No hay suficientes estudiantes con ingresos y gastos.")
+        return None
 
     df = pd.DataFrame(feature_list)
 
-    # FILTRO DE SEGURIDAD (Zoom para que la gráfica no se vea aplastada)
+    # FILTRO DE SEGURIDAD (Zoom para evitar el efecto del -650)
     df = df[(df['savings_rate'] >= -1.0) & (df['savings_rate'] <= 1.0)]
     
     if len(df) < 3: 
-        print("[DEBUG] Muy pocos datos tras el filtro de -1 a 1.")
+        print("[DEBUG] Muy pocos datos tras filtrar outliers (-1 a 1).")
         return None
 
     df_features = df[["savings_rate", "discretionary_ratio"]]
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
 
-    # Forzamos K=3 para que salgan colores y nombres diferentes
+    # Forzamos K=3 para que tu tesis se vea con varios colores
     kmeans = KMeans(n_clusters=3, random_state=42, n_init='auto')
     df['cluster'] = kmeans.fit_predict(scaled_features)
     df['global_silhouette'] = silhouette_score(scaled_features, df['cluster'])
