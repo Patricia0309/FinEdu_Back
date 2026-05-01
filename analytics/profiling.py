@@ -77,13 +77,15 @@ def train_and_cluster_students(db: Session):
     for student in students:
         # Aquí asumo que get_student_features ya está definida en tu código
         features = get_student_features(db, student_id=student.id)
+        if len(feature_list) == 0 and features:
+            print(f"[DEBUG] Ejemplo de datos del primer estudiante: {features}")
         
         if not features:
             continue
         
         # Validación: Evitar usuarios con ingresos cero o negativos que rompen las tasas
-        if features.get("income", 0) <= 0:
-            continue
+        #if features.get("income", 0) <= 0:
+        #   continue
             
         feature_list.append({
             "student_id": student.id,
