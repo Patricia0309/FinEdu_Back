@@ -73,47 +73,87 @@ def train_and_cluster_students(db: Session):
     students = db.query(models.Student).all()
     feature_list = []
     
+    # --- 1. EXTRACCIÓN Y VALIDACIÓN ---
     for student in students:
         features = get_student_features(db, student_id=student.id)
-        if features:
-            features["student_id"] = student.id
-            feature_list.append(features)
-            
-    if len(feature_list) < 5: 
+        
+        if not features:
+            continue
+        
+        # Validación crítica: evitar divisiones inválidas
+        if features.get("income", 0) <= 0:
+            continue
+        
+        feature_list.append({
+            "student_id": student.id,
+            "savings_rate": features["savings_rate"],
+            "discretionary_ratio": features["discretionary_ratio"],
+            "avg_expense_amount": features["avg_expense_amount"]
+        })
+    
+    if len(feature_list) < 10:
         return None
     
     df = pd.DataFrame(feature_list)
 
-    # --- FILTRADO ESTADÍSTICO DE OUTLIERS ---
-    q_low = df['savings_rate'].quantile(0.01)
-    q_high = df['savings_rate'].quantile(0.99)
-    df = df[(df['savings_rate'] >= q_low) & (df['savings_rate'] <= q_high)]
+    # --- 2. LIMPIEZA DE OUTLIERS (EN TODAS LAS VARIABLES) ---
+    cols = ["savings_rate", "discretionary_ratio", "avg_expense_amount"]
+    
+    for col in cols:
+        q_low = df[col].quantile(0.01)
+        q_high = df[col].quantile(0.99)
+        df = df[(df[col] >= q_low) & (df[col] <= q_high)]
+    
+    if len(df) < 5:
+        return None
 
-    df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
+    # --- 3. SELECCIÓN DE FEATURES ---
+    # 🔁 PRUEBA A/B: comenta una u otra
+    df_features = df[["savings_rate", "discretionary_ratio"]]
+    # df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
+
+    # --- 4. ESCALADO ---
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(df_features)
-    
-    # --- BÚSQUEDA DEL MEJOR K ---
+
+    # --- 5. BÚSQUEDA DEL MEJOR K ---
     best_k = 2
     best_score = -1
-    
-    for k in range(2, min(6, len(df) + 1)):
+
+    max_k = min(5, len(df) - 1)
+
+    for k in range(2, max_k + 1):
         kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
         labels = kmeans.fit_predict(scaled_features)
+        
+        # Evita casos inválidos (clusters de 1 elemento)
+        if len(set(labels)) < 2:
+            continue
+        
         score = silhouette_score(scaled_features, labels)
+
         if score > best_score:
             best_score = score
             best_k = k
 
+    # --- 6. MODELO FINAL ---
     final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
     df['cluster'] = final_kmeans.fit_predict(scaled_features)
     df['global_silhouette'] = best_score
-    
+
+    # --- 7. ORDENAMIENTO DE PERFILES ---
     cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
-    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
-    df['profile_id'] = df['cluster'].map(rank_map)
-    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
     
+    rank_map = {
+        cluster_id: rank + 1
+        for rank, cluster_id in enumerate(cluster_savings.index)
+    }
+
+    df['profile_id'] = df['cluster'].map(rank_map)
+    df['profile_name'] = df['profile_id'].apply(
+        lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile']
+    )
+
     return df
 
 # --- LÓGICA APRIORI ---
