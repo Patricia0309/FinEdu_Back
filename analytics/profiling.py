@@ -70,54 +70,49 @@ def get_student_features(db: Session, student_id: int, period_days: int = 60):
     }
 
 def train_and_cluster_students(db: Session):
-    students = db.query(models.Student).all()[cite: 1]
+    students = db.query(models.Student).all()
     feature_list = []
     
     for student in students:
-        features = get_student_features(db, student_id=student.id)[cite: 1]
+        features = get_student_features(db, student_id=student.id)
         if features:
             features["student_id"] = student.id
             feature_list.append(features)
             
-    if len(feature_list) < 10: # Aumentamos el mínimo para estabilidad estadística
+    if len(feature_list) < 5: 
         return None
     
     df = pd.DataFrame(feature_list)
 
-    # --- MEJORA 1: FILTRADO ESTADÍSTICO (OUTLIERS) ---
-    # Usamos percentiles para eliminar el 1% de ruido extremo
+    # --- FILTRADO ESTADÍSTICO DE OUTLIERS ---
     q_low = df['savings_rate'].quantile(0.01)
     q_high = df['savings_rate'].quantile(0.99)
     df = df[(df['savings_rate'] >= q_low) & (df['savings_rate'] <= q_high)]
 
     df_features = df[["savings_rate", "discretionary_ratio", "avg_expense_amount"]]
-    scaler = StandardScaler()[cite: 1]
-    scaled_features = scaler.fit_transform(df_features)[cite: 1]
+    scaler = StandardScaler()
+    scaled_features = scaler.fit_transform(df_features)
     
-    # --- MEJORA 2: SELECCIÓN DINÁMICA DE K (SILHOUETTE) ---
+    # --- BÚSQUEDA DEL MEJOR K ---
     best_k = 2
     best_score = -1
     
-    # Probamos de 2 a 5 clusters para encontrar la separación óptima
-    for k in range(2, min(6, len(df))):
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')[cite: 1]
+    for k in range(2, min(6, len(df) + 1)):
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
         labels = kmeans.fit_predict(scaled_features)
         score = silhouette_score(scaled_features, labels)
-        
         if score > best_score:
             best_score = score
             best_k = k
 
-    # Entrenamos el modelo final con el mejor K encontrado
     final_kmeans = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
     df['cluster'] = final_kmeans.fit_predict(scaled_features)
     df['global_silhouette'] = best_score
     
-    # --- RANKING Y PERFILES ---
-    cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)[cite: 1]
-    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}[cite: 1]
-    df['profile_id'] = df['cluster'].map(rank_map)[cite: 1]
-    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])[cite: 1]
+    cluster_savings = df.groupby('cluster')['savings_rate'].mean().sort_values(ascending=False)
+    rank_map = {cluster_id: rank + 1 for rank, cluster_id in enumerate(cluster_savings.index)}
+    df['profile_id'] = df['cluster'].map(rank_map)
+    df['profile_name'] = df['profile_id'].apply(lambda x: PROFILE_MAP.get(x, PROFILE_MAP[5])['profile'])
     
     return df
 
